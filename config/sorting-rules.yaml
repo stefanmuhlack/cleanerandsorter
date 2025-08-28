@@ -1,232 +1,202 @@
 # CAS Document Management System - Sorting Rules Configuration
-# This file defines rules for automatically sorting documents into categories
+# Version: 2.0.0
+# Description: Advanced sorting rules for customer and project-based document organization
 
-rules:
-  # Invoice and billing documents
-  - name: "Rechnungen"
-    keywords: 
-      - "rechnung"
-      - "invoice"
-      - "bill"
-      - "zahlung"
-      - "payment"
-      - "abrechnung"
-      - "billing"
-    target_path: "documents/invoices/{year}/{month}"
-    priority: 10
+# Global Configuration
+global:
+  default_priority: 50
+  enable_duplicate_detection: true
+  enable_llm_classification: true
+  backup_before_processing: true
+  sensitive_categories:
+    - "finanzen"
+    - "buchhaltung" 
+    - "personal"
+    - "vertraege"
+    - "kundendaten"
+
+# Customer-specific base paths
+customers:
+  default_path: "/kunden/{customer_name}"
+  customer_mappings:
+    "wwe-media": "/kunden/wwe-media"
+    "client-a": "/kunden/client-a"
+    "client-b": "/kunden/client-b"
+    "internal": "/intern"
+
+# Project structure
+projects:
+  base_path: "{customer_path}/projekte/{project_name}"
+  project_types:
+    - "webdesign"
+    - "marketing"
+    - "video"
+    - "fotografie"
+    - "consulting"
+
+# Document categories with role-based access
+categories:
+  finanzen:
+    path: "/finanzen"
+    required_roles: ["admin", "buchhaltung"]
+    subcategories:
+      rechnungen:
+        path: "/finanzen/rechnungen/{year}"
+        keywords: ["rechnung", "invoice", "bill", "zahlung", "payment"]
+        file_types: ["pdf", "doc", "docx", "xlsx"]
+        priority: 90
+      buchhaltung:
+        path: "/finanzen/buchhaltung/{year}"
+        keywords: ["buchhaltung", "accounting", "steuer", "tax", "umsatzsteuer"]
+        file_types: ["pdf", "xlsx", "csv"]
+        required_roles: ["admin", "buchhaltung"]
+        priority: 95
+      vertraege:
+        path: "/finanzen/vertraege/{year}"
+        keywords: ["vertrag", "contract", "agreement", "vereinbarung"]
+        file_types: ["pdf", "doc", "docx"]
+        required_roles: ["admin", "recht"]
+        priority: 85
+
+  projekte:
+    path: "/projekte"
+    subcategories:
+      webdesign:
+        path: "/projekte/webdesign/{customer}/{project}"
+        keywords: ["website", "webdesign", "html", "css", "javascript"]
+        file_types: ["psd", "ai", "sketch", "fig", "html", "css", "js"]
+        priority: 70
+      marketing:
+        path: "/projekte/marketing/{customer}/{project}"
+        keywords: ["marketing", "kampagne", "campaign", "social media"]
+        file_types: ["psd", "ai", "pdf", "docx", "pptx"]
+        priority: 75
+      video:
+        path: "/projekte/video/{customer}/{project}"
+        keywords: ["video", "footage", "edit", "premiere", "after effects"]
+        file_types: ["mov", "mp4", "avi", "prproj", "aep"]
+        priority: 80
+      fotografie:
+        path: "/projekte/fotografie/{customer}/{project}"
+        keywords: ["foto", "photography", "lightroom", "photoshop"]
+        file_types: ["raw", "cr2", "nef", "arw", "psd"]
+        priority: 75
+
+  personal:
+    path: "/personal"
+    required_roles: ["admin", "hr"]
+    subcategories:
+      bewerbungen:
+        path: "/personal/bewerbungen/{year}"
+        keywords: ["bewerbung", "application", "cv", "lebenslauf"]
+        file_types: ["pdf", "doc", "docx"]
+        priority: 85
+      vertraege:
+        path: "/personal/vertraege/{year}"
+        keywords: ["arbeitsvertrag", "employment contract", "gehalt", "salary"]
+        file_types: ["pdf", "doc", "docx"]
+        priority: 90
+
+  footage:
+    path: "/footage"
+    subcategories:
+      raw:
+        path: "/footage/{customer}/{project}/raw"
+        keywords: ["raw", "original", "source"]
+        file_types: ["raw", "cr2", "nef", "arw", "mov", "mp4"]
+        priority: 60
+      processed:
+        path: "/footage/{customer}/{project}/processed"
+        keywords: ["processed", "edited", "final"]
+        file_types: ["mp4", "mov", "avi", "psd", "jpg"]
+        priority: 65
+      archive:
+        path: "/footage/archive/{year}"
+        keywords: ["archive", "backup", "old"]
+        file_types: ["*"]
+        priority: 40
+
+# File type specific rules
+file_types:
+  images:
+    extensions: ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "raw", "cr2", "nef", "arw"]
+    default_path: "/assets/images/{customer}/{project}"
+    compression: true
+    thumbnail_generation: true
+  
+  videos:
+    extensions: ["mp4", "mov", "avi", "mkv", "wmv", "flv"]
+    default_path: "/assets/videos/{customer}/{project}"
+    compression: false
+    thumbnail_generation: true
+  
+  documents:
+    extensions: ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt"]
+    default_path: "/documents/{customer}/{project}"
+    compression: true
+    ocr_processing: true
+  
+  archives:
+    extensions: ["zip", "rar", "7z", "tar", "gz"]
+    default_path: "/archives/{customer}/{project}"
+    extraction: true
+
+# Processing rules
+processing:
+  duplicate_detection:
     enabled: true
-    file_types:
-      - "pdf"
-      - "document"
-      - "spreadsheet"
-    min_file_size: 1024  # 1KB
-    max_file_size: 10485760  # 10MB
-
-  # Contracts and agreements
-  - name: "Verträge"
-    keywords:
-      - "vertrag"
-      - "contract"
-      - "agreement"
-      - "vereinbarung"
-      - "abkommen"
-      - "pact"
-    target_path: "documents/contracts/{year}"
-    priority: 20
+    algorithm: "sha256"
+    threshold: 0.95
+  
+  llm_classification:
     enabled: true
-    file_types:
-      - "pdf"
-      - "document"
-    min_file_size: 1024
-    max_file_size: 52428800  # 50MB
-
-  # Financial reports
-  - name: "Finanzberichte"
-    keywords:
-      - "finanz"
-      - "financial"
-      - "bilanz"
-      - "balance"
-      - "gewinn"
-      - "profit"
-      - "verlust"
-      - "loss"
-      - "umsatz"
-      - "revenue"
-      - "kosten"
-      - "cost"
-    target_path: "documents/financial/{year}/{quarter}"
-    priority: 30
+    model: "mistral-7b"
+    temperature: 0.1
+    max_tokens: 100
+  
+  backup:
     enabled: true
-    file_types:
-      - "pdf"
-      - "document"
-      - "spreadsheet"
-    min_file_size: 1024
-    max_file_size: 10485760
-
-  # HR and personnel documents
-  - name: "Personal"
-    keywords:
-      - "personal"
-      - "hr"
-      - "mitarbeiter"
-      - "employee"
-      - "bewerbung"
-      - "application"
-      - "lebenslauf"
-      - "cv"
-      - "resume"
-      - "arbeitsvertrag"
-      - "employment"
-    target_path: "documents/hr/{year}"
-    priority: 40
+    retention_days: 30
+    compression: true
+  
+  rollback:
     enabled: true
-    file_types:
-      - "pdf"
-      - "document"
-      - "image"
-    min_file_size: 1024
-    max_file_size: 20971520  # 20MB
+    max_rollback_depth: 10
+    snapshot_interval: "daily"
 
-  # Marketing materials
-  - name: "Marketing"
-    keywords:
-      - "marketing"
-      - "werbung"
-      - "advertisement"
-      - "kampagne"
-      - "campaign"
-      - "flyer"
-      - "broschüre"
-      - "brochure"
-      - "präsentation"
-      - "presentation"
-    target_path: "documents/marketing/{year}/{month}"
-    priority: 50
+# Email integration rules
+email:
+  imap_accounts:
+    - name: "otrs"
+      host: "mail.company.com"
+      port: 993
+      username: "otrs@company.com"
+      password: "${OTRS_EMAIL_PASSWORD}"
+      folders: ["INBOX", "Processed"]
+    - name: "support"
+      host: "mail.company.com"
+      port: 993
+      username: "support@company.com"
+      password: "${SUPPORT_EMAIL_PASSWORD}"
+      folders: ["INBOX"]
+  
+  attachment_rules:
+    - condition: "sender_contains:otrs"
+      action: "classify_as_ticket"
+      target_path: "/tickets/{ticket_id}"
+    - condition: "subject_contains:rechnung"
+      action: "classify_as_invoice"
+      target_path: "/finanzen/rechnungen/{year}"
+    - condition: "file_type:pdf"
+      action: "process_with_ocr"
+      target_path: "/documents/emails/{year}"
+
+# OTRS integration
+otrs:
+  api_url: "http://otrs.company.com/api"
+  api_key: "${OTRS_API_KEY}"
+  export_path: "/mnt/nas/source/otrs-exports"
+  ticket_attachments:
     enabled: true
-    file_types:
-      - "pdf"
-      - "document"
-      - "presentation"
-      - "image"
-    min_file_size: 1024
-    max_file_size: 52428800
-
-  # Technical documentation
-  - name: "Technische Dokumentation"
-    keywords:
-      - "technisch"
-      - "technical"
-      - "dokumentation"
-      - "documentation"
-      - "anleitung"
-      - "manual"
-      - "handbuch"
-      - "handbook"
-      - "spezifikation"
-      - "specification"
-      - "architektur"
-      - "architecture"
-    target_path: "documents/technical/{category}"
-    priority: 60
-    enabled: true
-    file_types:
-      - "pdf"
-      - "document"
-      - "spreadsheet"
-    min_file_size: 1024
-    max_file_size: 10485760
-
-  # Legal documents
-  - name: "Rechtliche Dokumente"
-    keywords:
-      - "recht"
-      - "legal"
-      - "gesetz"
-      - "law"
-      - "anwalt"
-      - "lawyer"
-      - "gericht"
-      - "court"
-      - "klage"
-      - "lawsuit"
-      - "urteil"
-      - "judgment"
-    target_path: "documents/legal/{year}"
-    priority: 70
-    enabled: true
-    file_types:
-      - "pdf"
-      - "document"
-    min_file_size: 1024
-    max_file_size: 52428800
-
-  # Project documents
-  - name: "Projekte"
-    keywords:
-      - "projekt"
-      - "project"
-      - "planung"
-      - "planning"
-      - "roadmap"
-      - "milestone"
-      - "meilenstein"
-      - "task"
-      - "aufgabe"
-    target_path: "documents/projects/{project_name}"
-    priority: 80
-    enabled: true
-    file_types:
-      - "pdf"
-      - "document"
-      - "spreadsheet"
-      - "presentation"
-    min_file_size: 1024
-    max_file_size: 20971520
-
-  # Images and photos
-  - name: "Bilder"
-    keywords:
-      - "bild"
-      - "image"
-      - "photo"
-      - "foto"
-      - "screenshot"
-      - "screenshot"
-    target_path: "documents/images/{year}/{month}"
-    priority: 90
-    enabled: true
-    file_types:
-      - "image"
-    min_file_size: 1024
-    max_file_size: 104857600  # 100MB
-
-  # Archive and backup files
-  - name: "Archive"
-    keywords:
-      - "archiv"
-      - "archive"
-      - "backup"
-      - "sicherung"
-      - "zip"
-      - "rar"
-      - "tar"
-      - "gz"
-    target_path: "documents/archive/{year}"
-    priority: 100
-    enabled: true
-    file_types:
-      - "archive"
-    min_file_size: 1024
-    max_file_size: 1048576000  # 1GB
-
-# Default rule for unmatched files
-default_rule:
-  name: "Unsortiert"
-  target_path: "documents/unsorted/{year}/{month}"
-  priority: 999
-  enabled: true
-  file_types: null  # Accept all file types
-  min_file_size: 0
-  max_file_size: null  # No size limit 
+    target_path: "/tickets/{ticket_id}/attachments"
+    classification: true 

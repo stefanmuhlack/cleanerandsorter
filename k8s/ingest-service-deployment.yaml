@@ -1,37 +1,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: cas-ingest-service
-  namespace: cas-dms
+  name: ingest-service
+  namespace: cas-system
   labels:
-    app: cas-ingest-service
-    version: v1.0.0
+    app: ingest-service
 spec:
   replicas: 2
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
   selector:
     matchLabels:
-      app: cas-ingest-service
+      app: ingest-service
   template:
     metadata:
       labels:
-        app: cas-ingest-service
-        version: v1.0.0
+        app: ingest-service
     spec:
       containers:
       - name: ingest-service
-        image: cas-ingest-service:latest
-        imagePullPolicy: Always
+        image: cas_stm-ingest-service:latest
         ports:
         - containerPort: 8000
-          name: http
         env:
         - name: MINIO_ENDPOINT
-          value: "cas-minio:9000"
+          value: "minio:9000"
         - name: MINIO_ACCESS_KEY
           valueFrom:
             secretKeyRef:
@@ -43,25 +34,29 @@ spec:
               name: cas-secrets
               key: minio-secret-key
         - name: RABBITMQ_URL
-          value: "amqp://cas-user:$(RABBITMQ_PASSWORD)@cas-rabbitmq:5672/"
-        - name: RABBITMQ_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: cas-secrets
-              key: rabbitmq-password
+          value: "amqp://cas_user:cas_password@rabbitmq:5672/"
         - name: ELASTICSEARCH_URL
-          value: "http://cas-elasticsearch:9200"
-        - name: POSTGRES_URL
-          value: "postgresql://cas-user:$(POSTGRES_PASSWORD)@cas-postgres:5432/cas_dms"
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: cas-secrets
-              key: postgres-password
+          value: "http://elasticsearch:9200"
         - name: LOG_LEVEL
           value: "INFO"
-        - name: ENVIRONMENT
-          value: "production"
+        - name: NAS_SOURCE_PATH
+          value: "/mnt/nas/source"
+        - name: NAS_PROCESSED_PATH
+          value: "/mnt/nas/processed"
+        - name: FOOTAGE_PATH
+          value: "/mnt/footage"
+        volumeMounts:
+        - name: nas-share
+          mountPath: /mnt/nas
+          readOnly: false
+        - name: footage-share
+          mountPath: /mnt/footage
+          readOnly: false
+        - name: sorting-rules
+          mountPath: /app/config/sorting-rules.yaml
+          subPath: sorting-rules.yaml
+        - name: processed-data
+          mountPath: /data/sorted
         resources:
           requests:
             memory: "512Mi"
@@ -75,77 +70,39 @@ spec:
             port: 8000
           initialDelaySeconds: 30
           periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /health
+            path: /ready
             port: 8000
-          initialDelaySeconds: 10
+          initialDelaySeconds: 5
           periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 3
-        volumeMounts:
-        - name: config-volume
-          mountPath: /app/config
-          readOnly: true
-        - name: source-data
-          mountPath: /data/source
-          readOnly: true
-        - name: sorted-data
-          mountPath: /data/sorted
-        - name: logs
-          mountPath: /app/logs
       volumes:
-      - name: config-volume
+      - name: nas-share
+        persistentVolumeClaim:
+          claimName: nas-share-pvc
+      - name: footage-share
+        persistentVolumeClaim:
+          claimName: footage-share-pvc
+      - name: sorting-rules
         configMap:
-          name: cas-config
-      - name: source-data
+          name: sorting-rules-config
+      - name: processed-data
         persistentVolumeClaim:
-          claimName: cas-source-data-pvc
-      - name: sorted-data
-        persistentVolumeClaim:
-          claimName: cas-sorted-data-pvc
-      - name: logs
-        emptyDir: {}
-      imagePullSecrets:
-      - name: cas-registry-secret
-      nodeSelector:
-        node-role: worker
-      tolerations:
-      - key: "dedicated"
-        operator: "Equal"
-        value: "cas-dms"
-        effect: "NoSchedule"
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: app
-                  operator: In
-                  values:
-                  - cas-ingest-service
-              topologyKey: kubernetes.io/hostname
+          claimName: postgres-pvc
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: cas-ingest-service
-  namespace: cas-dms
-  labels:
-    app: cas-ingest-service
+  name: ingest-service
+  namespace: cas-system
 spec:
-  type: ClusterIP
-  ports:
-  - port: 8000
-    targetPort: 8000
-    protocol: TCP
-    name: http
   selector:
-    app: cas-ingest-service
+    app: ingest-service
+  ports:
+  - protocol: TCP
+    port: 8000
+    targetPort: 8000
+  type: ClusterIP
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler

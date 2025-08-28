@@ -5,18 +5,26 @@ These contain the core business logic and orchestrate operations.
 
 import asyncio
 import logging
+import os
+import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from uuid import UUID
+import hashlib
+import yaml
+import json
+from dataclasses import dataclass, asdict
+import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .entities import (
     FileEntity, SortingRule, ProcessingBatch, ProcessingStatistics,
-    FileType, ProcessingStatus, FileMetadata
+    FileType, ProcessingStatus, FileMetadata, Document, ProcessingResult, ClassificationResult
 )
 from .repositories import (
     FileRepository, SortingRuleRepository, ProcessingBatchRepository,
-    ObjectStorageRepository, MessageQueueRepository
+    ObjectStorageRepository, MessageQueueRepository, DocumentRepository, StorageRepository
 )
 
 
@@ -260,3 +268,458 @@ class StatisticsService:
     async def get_files_by_status(self, status: ProcessingStatus) -> List[FileEntity]:
         """Get files by processing status."""
         return await self.file_repo.get_by_status(status.value) 
+
+
+@dataclass
+class DuplicateDetectionResult:
+    is_duplicate: bool
+    existing_document_id: Optional[str] = None
+    similarity_score: float = 0.0
+    hash_value: str = ""
+
+@dataclass
+class LLMClassificationResult:
+    category: str
+    confidence: float
+    customer: Optional[str] = None
+    project: Optional[str] = None
+    tags: List[str] = None
+    metadata: Dict = None
+
+@dataclass
+class ProcessingSnapshot:
+    job_id: str
+    timestamp: datetime
+    processed_files: List[str]
+    assigned_metadata: Dict
+    target_paths: List[str]
+    database_entries: List[str]
+
+class DocumentProcessingService:
+    """Enhanced document processing service with duplicate detection and LLM classification"""
+    
+    def __init__(
+        self,
+        document_repo: DocumentRepository,
+        storage_repo: StorageRepository,
+        message_queue_repo: MessageQueueRepository,
+        config_path: str = "/app/config/sorting-rules.yaml"
+    ):
+        self.document_repo = document_repo
+        self.storage_repo = storage_repo
+        self.message_queue_repo = message_queue_repo
+        self.config = self._load_config(config_path)
+        self.snapshots: Dict[str, ProcessingSnapshot] = {}
+        
+    def _load_config(self, config_path: str) -> Dict:
+        """Load sorting rules configuration"""
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                return yaml.safe_load(f)
+        except Exception as e:
+            logger.error(f"Failed to load config from {config_path}: {e}")
+            return {}
+    
+    def calculate_file_hash(self, file_path: str, algorithm: str = "sha256") -> str:
+        """Calculate file hash for duplicate detection"""
+        hash_func = hashlib.new(algorithm)
+        try:
+            with open(file_path, 'rb') as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hash_func.update(chunk)
+            return hash_func.hexdigest()
+        except Exception as e:
+            logger.error(f"Failed to calculate hash for {file_path}: {e}")
+            return ""
+    
+    def detect_duplicates(self, file_path: str) -> DuplicateDetectionResult:
+        """Detect duplicate files using hash-based comparison"""
+        if not self.config.get('processing', {}).get('duplicate_detection', {}).get('enabled', True):
+            return DuplicateDetectionResult(is_duplicate=False)
+        
+        file_hash = self.calculate_file_hash(file_path)
+        if not file_hash:
+            return DuplicateDetectionResult(is_duplicate=False)
+        
+        # Check if hash exists in database
+        existing_doc = self.document_repo.find_by_hash(file_hash)
+        if existing_doc:
+            return DuplicateDetectionResult(
+                is_duplicate=True,
+                existing_document_id=existing_doc.id,
+                similarity_score=1.0,
+                hash_value=file_hash
+            )
+        
+        return DuplicateDetectionResult(
+            is_duplicate=False,
+            hash_value=file_hash
+        )
+    
+    def classify_with_llm(self, file_path: str, file_content: Optional[str] = None) -> LLMClassificationResult:
+        """Classify document using LLM"""
+        if not self.config.get('processing', {}).get('llm_classification', {}).get('enabled', True):
+            return LLMClassificationResult(category="unsorted", confidence=0.0)
+        
+        llm_config = self.config.get('processing', {}).get('llm_classification', {})
+        model = llm_config.get('model', 'mistral-7b')
+        temperature = llm_config.get('temperature', 0.1)
+        max_tokens = llm_config.get('max_tokens', 100)
+        
+        # Prepare content for classification
+        content = file_content or self._extract_text_content(file_path)
+        if not content:
+            return LLMClassificationResult(category="unsorted", confidence=0.0)
+        
+        try:
+            # Call LLM service (Ollama or Hugging Face)
+            classification = self._call_llm_service(content, model, temperature, max_tokens)
+            return classification
+        except Exception as e:
+            logger.error(f"LLM classification failed for {file_path}: {e}")
+            return LLMClassificationResult(category="unsorted", confidence=0.0)
+    
+    def _call_llm_service(self, content: str, model: str, temperature: float, max_tokens: int) -> LLMClassificationResult:
+        """Call LLM service for classification"""
+        # Try Ollama first
+        try:
+            response = requests.post(
+                "http://ollama:11434/api/generate",
+                json={
+                    "model": model,
+                    "prompt": f"""Classify this document into one of these categories: finanzen, projekte, personal, footage, unsorted.
+                    Also extract customer name and project name if mentioned.
+                    Document content: {content[:1000]}
+                    
+                    Respond in JSON format:
+                    {{
+                        "category": "category_name",
+                        "confidence": 0.95,
+                        "customer": "customer_name",
+                        "project": "project_name",
+                        "tags": ["tag1", "tag2"]
+                    }}""",
+                    "temperature": temperature,
+                    "max_tokens": max_tokens
+                },
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                response_text = result.get('response', '{}')
+                try:
+                    classification = json.loads(response_text)
+                    return LLMClassificationResult(
+                        category=classification.get('category', 'unsorted'),
+                        confidence=classification.get('confidence', 0.0),
+                        customer=classification.get('customer'),
+                        project=classification.get('project'),
+                        tags=classification.get('tags', [])
+                    )
+                except json.JSONDecodeError:
+                    logger.warning(f"Invalid JSON response from LLM: {response_text}")
+            
+        except Exception as e:
+            logger.warning(f"Ollama service unavailable: {e}")
+        
+        # Fallback to rule-based classification
+        return self._rule_based_classification(content)
+    
+    def _rule_based_classification(self, content: str) -> LLMClassificationResult:
+        """Fallback rule-based classification"""
+        content_lower = content.lower()
+        
+        # Check categories
+        categories = self.config.get('categories', {})
+        for category_name, category_config in categories.items():
+            keywords = []
+            for subcategory in category_config.get('subcategories', {}).values():
+                keywords.extend(subcategory.get('keywords', []))
+            
+            if any(keyword in content_lower for keyword in keywords):
+                return LLMClassificationResult(
+                    category=category_name,
+                    confidence=0.7,
+                    tags=[category_name]
+                )
+        
+        return LLMClassificationResult(category="unsorted", confidence=0.0)
+    
+    def _extract_text_content(self, file_path: str) -> Optional[str]:
+        """Extract text content from file for classification"""
+        try:
+            # Simple text extraction - in production, use proper OCR/text extraction
+            if file_path.lower().endswith('.txt'):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+            # Add more file type handlers here
+            return None
+        except Exception as e:
+            logger.error(f"Failed to extract text from {file_path}: {e}")
+            return None
+    
+    def create_processing_snapshot(self, job_id: str, files: List[str]) -> ProcessingSnapshot:
+        """Create a snapshot before processing for rollback capability"""
+        snapshot = ProcessingSnapshot(
+            job_id=job_id,
+            timestamp=datetime.now(),
+            processed_files=files.copy(),
+            assigned_metadata={},
+            target_paths=[],
+            database_entries=[]
+        )
+        self.snapshots[job_id] = snapshot
+        return snapshot
+    
+    def rollback_processing(self, job_id: str) -> bool:
+        """Rollback processing for a specific job"""
+        if job_id not in self.snapshots:
+            logger.error(f"No snapshot found for job {job_id}")
+            return False
+        
+        snapshot = self.snapshots[job_id]
+        logger.info(f"Rolling back job {job_id} with {len(snapshot.processed_files)} files")
+        
+        try:
+            # Rollback file movements
+            for file_path in snapshot.processed_files:
+                if os.path.exists(file_path):
+                    # Move back to original location
+                    original_path = self._get_original_path(file_path)
+                    if original_path and original_path != file_path:
+                        shutil.move(file_path, original_path)
+            
+            # Rollback database entries
+            for entry_id in snapshot.database_entries:
+                self.document_repo.delete(entry_id)
+            
+            # Remove snapshot
+            del self.snapshots[job_id]
+            
+            logger.info(f"Successfully rolled back job {job_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Rollback failed for job {job_id}: {e}")
+            return False
+    
+    def _get_original_path(self, current_path: str) -> Optional[str]:
+        """Get original path from backup or metadata"""
+        # Implementation depends on backup strategy
+        # For now, return None (no rollback)
+        return None
+    
+    def process_document(self, file_path: str, job_id: str = None) -> ProcessingResult:
+        """Process a single document with enhanced features"""
+        if not os.path.exists(file_path):
+            return ProcessingResult(success=False, error="File not found")
+        
+        try:
+            # Create snapshot for rollback
+            if job_id:
+                self.create_processing_snapshot(job_id, [file_path])
+            
+            # Detect duplicates
+            duplicate_result = self.detect_duplicates(file_path)
+            if duplicate_result.is_duplicate:
+                logger.info(f"Duplicate detected for {file_path}")
+                return ProcessingResult(
+                    success=True,
+                    message=f"Duplicate of document {duplicate_result.existing_document_id}",
+                    metadata={"duplicate": True, "existing_id": duplicate_result.existing_document_id}
+                )
+            
+            # Classify with LLM
+            classification = self.classify_with_llm(file_path)
+            
+            # Determine target path based on classification
+            target_path = self._determine_target_path(file_path, classification)
+            
+            # Create backup if enabled
+            if self.config.get('processing', {}).get('backup', {}).get('enabled', True):
+                backup_path = self._create_backup(file_path)
+            
+            # Move file to target location
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            shutil.move(file_path, target_path)
+            
+            # Store document metadata
+            document = Document(
+                id=None,  # Will be set by repository
+                filename=os.path.basename(file_path),
+                original_path=file_path,
+                target_path=target_path,
+                file_hash=duplicate_result.hash_value,
+                category=classification.category,
+                customer=classification.customer,
+                project=classification.project,
+                tags=classification.tags or [],
+                metadata=classification.metadata or {},
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            
+            stored_doc = self.document_repo.save(document)
+            
+            # Update snapshot
+            if job_id and job_id in self.snapshots:
+                self.snapshots[job_id].assigned_metadata[file_path] = asdict(classification)
+                self.snapshots[job_id].target_paths.append(target_path)
+                self.snapshots[job_id].database_entries.append(stored_doc.id)
+            
+            return ProcessingResult(
+                success=True,
+                document_id=stored_doc.id,
+                target_path=target_path,
+                metadata={
+                    "category": classification.category,
+                    "confidence": classification.confidence,
+                    "customer": classification.customer,
+                    "project": classification.project,
+                    "tags": classification.tags
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to process {file_path}: {e}")
+            return ProcessingResult(success=False, error=str(e))
+    
+    def _determine_target_path(self, file_path: str, classification: LLMClassificationResult) -> str:
+        """Determine target path based on classification and rules"""
+        categories = self.config.get('categories', {})
+        category_config = categories.get(classification.category, {})
+        
+        # Get base path from category
+        base_path = category_config.get('path', '/unsorted')
+        
+        # Add customer and project if available
+        if classification.customer:
+            base_path = base_path.replace('{customer}', classification.customer)
+        if classification.project:
+            base_path = base_path.replace('{project}', classification.project)
+        
+        # Add year
+        current_year = datetime.now().year
+        base_path = base_path.replace('{year}', str(current_year))
+        
+        # Add filename
+        filename = os.path.basename(file_path)
+        target_path = os.path.join(base_path, filename)
+        
+        return target_path
+    
+    def _create_backup(self, file_path: str) -> str:
+        """Create backup of file before processing"""
+        backup_config = self.config.get('processing', {}).get('backup', {})
+        backup_dir = backup_config.get('path', '/backups')
+        retention_days = backup_config.get('retention_days', 30)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_filename = f"{timestamp}_{os.path.basename(file_path)}"
+        backup_path = os.path.join(backup_dir, backup_filename)
+        
+        os.makedirs(backup_dir, exist_ok=True)
+        shutil.copy2(file_path, backup_path)
+        
+        return backup_path
+    
+    def process_batch(self, file_paths: List[str], job_id: str = None) -> List[ProcessingResult]:
+        """Process multiple documents in parallel"""
+        results = []
+        
+        # Create snapshot for batch
+        if job_id:
+            self.create_processing_snapshot(job_id, file_paths)
+        
+        # Process files in parallel
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            future_to_file = {
+                executor.submit(self.process_document, file_path, job_id): file_path 
+                for file_path in file_paths
+            }
+            
+            for future in as_completed(future_to_file):
+                file_path = future_to_file[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                except Exception as e:
+                    logger.error(f"Failed to process {file_path}: {e}")
+                    results.append(ProcessingResult(success=False, error=str(e)))
+        
+        return results
+
+class EmailProcessingService:
+    """Service for processing email attachments"""
+    
+    def __init__(self, document_service: DocumentProcessingService):
+        self.document_service = document_service
+        self.config = document_service.config
+    
+    def process_email_attachments(self, email_data: Dict) -> List[ProcessingResult]:
+        """Process email attachments according to rules"""
+        results = []
+        attachment_rules = self.config.get('email', {}).get('attachment_rules', [])
+        
+        for attachment in email_data.get('attachments', []):
+            # Apply rules
+            for rule in attachment_rules:
+                if self._matches_rule(attachment, email_data, rule):
+                    result = self._apply_rule(attachment, rule)
+                    results.append(result)
+                    break
+            else:
+                # No rule matched, use default processing
+                result = self.document_service.process_document(attachment['path'])
+                results.append(result)
+        
+        return results
+    
+    def _matches_rule(self, attachment: Dict, email_data: Dict, rule: Dict) -> bool:
+        """Check if attachment matches a rule"""
+        condition = rule.get('condition', '')
+        
+        if 'sender_contains:' in condition:
+            keyword = condition.split('sender_contains:')[1]
+            return keyword in email_data.get('sender', '')
+        
+        if 'subject_contains:' in condition:
+            keyword = condition.split('subject_contains:')[1]
+            return keyword in email_data.get('subject', '')
+        
+        if 'file_type:' in condition:
+            file_type = condition.split('file_type:')[1]
+            return attachment.get('type', '').lower() == file_type.lower()
+        
+        return False
+    
+    def _apply_rule(self, attachment: Dict, rule: Dict) -> ProcessingResult:
+        """Apply rule to attachment"""
+        action = rule.get('action', '')
+        target_path = rule.get('target_path', '/unsorted')
+        
+        if action == 'classify_as_ticket':
+            # Extract ticket ID from email subject or body
+            ticket_id = self._extract_ticket_id(attachment)
+            target_path = target_path.replace('{ticket_id}', ticket_id)
+        
+        elif action == 'classify_as_invoice':
+            current_year = datetime.now().year
+            target_path = target_path.replace('{year}', str(current_year))
+        
+        # Move file to target path
+        source_path = attachment['path']
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        shutil.move(source_path, target_path)
+        
+        return ProcessingResult(
+            success=True,
+            target_path=target_path,
+            metadata={"rule_applied": rule.get('condition', '')}
+        )
+    
+    def _extract_ticket_id(self, attachment: Dict) -> str:
+        """Extract ticket ID from attachment or email data"""
+        # Implementation depends on OTRS format
+        return "TICKET-001"  # Placeholder 

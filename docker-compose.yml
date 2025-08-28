@@ -11,14 +11,26 @@ services:
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
+      MINIO_SERVER_URL: http://localhost:9000
+      MINIO_DOMAIN: localhost
+      MINIO_BROWSER: "on"
+      MINIO_QUIET: "off"
+      MINIO_ANONYMOUS: "off"
+      MINIO_COMPRESS: "on"
+      MINIO_COMPRESS_EXTENSIONS: ".txt,.log,.csv,.json,.xml,.md,.html,.css,.js"
+      MINIO_COMPRESS_MIME_TYPES: "text/*,application/json,application/xml"
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
+      - minio_config:/root/.minio
+      - ./backups/minio:/backups
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 20s
       retries: 3
+    restart: unless-stopped
 
   # Database
   postgres:
@@ -240,6 +252,7 @@ volumes:
   paperless_media:
   prometheus_data:
   grafana_data:
+  minio_config:
 
 networks:
   default:

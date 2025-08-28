@@ -1,121 +1,110 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
-  Grid,
   Card,
   CardContent,
   Typography,
   Button,
+  Grid,
   Chip,
   LinearProgress,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemIcon,
-  Avatar,
-  IconButton,
-  Tooltip,
   Alert,
-  Divider,
-  Paper,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  TextField,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Switch,
-  FormControlLabel,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  IconButton,
+  Tooltip,
+  Divider,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow
 } from '@mui/material';
 import {
-  CloudUpload as CloudUploadIcon,
-  FileCopy as FileIcon,
-  CheckCircle as CheckCircleIcon,
-  Warning as WarningIcon,
-  Error as ErrorIcon,
-  PlayArrow as PlayIcon,
-  Pause as PauseIcon,
-  Stop as StopIcon,
-  Delete as DeleteIcon,
-  Refresh as RefreshIcon,
-  Settings as SettingsIcon,
-  ExpandMore as ExpandMoreIcon,
-  Description as DocumentIcon,
-  Image as ImageIcon,
-  PictureAsPdf as PdfIcon,
-  TableChart as TableIcon,
-  Archive as ArchiveIcon,
-  VideoFile as VideoIcon,
-  AudioFile as AudioIcon,
-  Code as CodeIcon
+  CloudUpload,
+  PlayArrow,
+  Stop,
+  Refresh,
+  Delete,
+  Undo,
+  CheckCircle,
+  Error,
+  Warning,
+  Info,
+  Settings,
+  Timeline,
+  Storage,
+  Psychology
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { 
+  uploadFiles, 
+  processFiles, 
+  stopProcessing,
+  rollbackJob,
+  fetchProcessingJobs,
+  fetchProcessingStats
+} from '../store/slices/fileProcessingSlice';
 
-interface FileItem {
+interface ProcessingJob {
   id: string;
   name: string;
-  size: number;
-  type: string;
-  status: 'pending' | 'processing' | 'completed' | 'error';
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  files: string[];
+  processedFiles: string[];
+  failedFiles: string[];
+  duplicates: string[];
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
   progress: number;
-  uploadedAt: Date;
-  processedAt?: Date;
-  error?: string;
-  preview?: string;
 }
 
 interface ProcessingStats {
   totalFiles: number;
   processedFiles: number;
-  pendingFiles: number;
   failedFiles: number;
-  processingRate: number;
-  averageTime: number;
+  duplicateFiles: number;
+  totalSize: number;
+  averageProcessingTime: number;
+  llmClassifications: number;
+  rollbacks: number;
 }
 
 const FileProcessing: React.FC = () => {
-  const [files, setFiles] = useState<FileItem[]>([]);
-  const [processing, setProcessing] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
-  const [processingSettings, setProcessingSettings] = useState({
-    enableOCR: true,
-    extractMetadata: true,
-    generateThumbnails: true,
-    maxFileSize: 100,
-    allowedTypes: ['pdf', 'doc', 'docx', 'jpg', 'png', 'txt']
+  const dispatch = useAppDispatch();
+  const { jobs, stats, loading, error } = useAppSelector(state => state.fileProcessing);
+  
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [processingConfig, setProcessingConfig] = useState({
+    enableDuplicateDetection: true,
+    enableLLMClassification: true,
+    enableBackup: true,
+    maxWorkers: 4,
+    batchSize: 10
   });
+  const [rollbackDialog, setRollbackDialog] = useState<{
+    open: boolean;
+    jobId: string | null;
+  }>({ open: false, jobId: null });
 
-  const [stats, setStats] = useState<ProcessingStats>({
-    totalFiles: 1247,
-    processedFiles: 1180,
-    pendingFiles: 45,
-    failedFiles: 22,
-    processingRate: 12.5,
-    averageTime: 2.3
-  });
+  useEffect(() => {
+    dispatch(fetchProcessingJobs());
+    dispatch(fetchProcessingStats());
+  }, [dispatch]);
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const newFiles: FileItem[] = acceptedFiles.map((file, index) => ({
-      id: `file-${Date.now()}-${index}`,
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      status: 'pending',
-      progress: 0,
-      uploadedAt: new Date(),
-      preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined
-    }));
-
-    setFiles(prev => [...prev, ...newFiles]);
-  }, []);
+  const onDrop = (acceptedFiles: File[]) => {
+    setSelectedFiles(prev => [...prev, ...acceptedFiles]);
+  };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -123,58 +112,57 @@ const FileProcessing: React.FC = () => {
       'application/pdf': ['.pdf'],
       'application/msword': ['.doc'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-      'image/*': ['.jpg', '.jpeg', '.png', '.gif'],
-      'text/plain': ['.txt'],
       'application/vnd.ms-excel': ['.xls'],
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx']
-    },
-    maxSize: processingSettings.maxFileSize * 1024 * 1024 // Convert MB to bytes
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'image/*': ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff'],
+      'video/*': ['.mp4', '.mov', '.avi', '.mkv'],
+      'text/plain': ['.txt']
+    }
   });
 
-  const getFileIcon = (type: string) => {
-    if (type.includes('pdf')) return <PdfIcon />;
-    if (type.includes('image')) return <ImageIcon />;
-    if (type.includes('document') || type.includes('word')) return <DocumentIcon />;
-    if (type.includes('spreadsheet') || type.includes('excel')) return <TableIcon />;
-    if (type.includes('video')) return <VideoIcon />;
-    if (type.includes('audio')) return <AudioIcon />;
-    if (type.includes('text')) return <DocumentIcon />;
-    if (type.includes('zip') || type.includes('rar')) return <ArchiveIcon />;
-    if (type.includes('code') || type.includes('script')) return <CodeIcon />;
-    return <FileIcon />;
+  const handleUpload = async () => {
+    if (selectedFiles.length === 0) return;
+    
+    const formData = new FormData();
+    selectedFiles.forEach(file => {
+      formData.append('files', file);
+    });
+    
+    await dispatch(uploadFiles(formData));
+    setSelectedFiles([]);
+  };
+
+  const handleProcess = async () => {
+    await dispatch(processFiles({
+      config: processingConfig,
+      files: selectedFiles.map(f => f.name)
+    }));
+  };
+
+  const handleRollback = async (jobId: string) => {
+    await dispatch(rollbackJob(jobId));
+    setRollbackDialog({ open: false, jobId: null });
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'completed':
-        return 'success';
-      case 'processing':
-        return 'primary';
-      case 'error':
-        return 'error';
-      case 'pending':
-        return 'warning';
-      default:
-        return 'default';
+      case 'completed': return 'success';
+      case 'processing': return 'info';
+      case 'failed': return 'error';
+      default: return 'default';
     }
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'completed':
-        return <CheckCircleIcon />;
-      case 'processing':
-        return <PlayIcon />;
-      case 'error':
-        return <ErrorIcon />;
-      case 'pending':
-        return <WarningIcon />;
-      default:
-        return <FileIcon />;
+      case 'completed': return <CheckCircle />;
+      case 'processing': return <Timeline />;
+      case 'failed': return <Error />;
+      default: return <Info />;
     }
   };
 
-  const formatBytes = (bytes: number): string => {
+  const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
@@ -182,465 +170,365 @@ const FileProcessing: React.FC = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const handleStartProcessing = () => {
-    setProcessing(true);
-    setPaused(false);
-    
-    // Simulate processing
-    const pendingFiles = files.filter(f => f.status === 'pending');
-    pendingFiles.forEach((file, index) => {
-      setTimeout(() => {
-        setFiles(prev => prev.map(f => 
-          f.id === file.id 
-            ? { ...f, status: 'processing', progress: 0 }
-            : f
-        ));
-        
-        // Simulate progress
-        const interval = setInterval(() => {
-          setFiles(prev => prev.map(f => {
-            if (f.id === file.id && f.status === 'processing') {
-              const newProgress = f.progress + Math.random() * 20;
-              if (newProgress >= 100) {
-                clearInterval(interval);
-                return {
-                  ...f,
-                  status: 'completed',
-                  progress: 100,
-                  processedAt: new Date()
-                };
-              }
-              return { ...f, progress: newProgress };
-            }
-            return f;
-          }));
-        }, 500);
-      }, index * 1000);
-    });
-  };
-
-  const handlePauseProcessing = () => {
-    setPaused(true);
-  };
-
-  const handleResumeProcessing = () => {
-    setPaused(false);
-  };
-
-  const handleStopProcessing = () => {
-    setProcessing(false);
-    setPaused(false);
-    setFiles(prev => prev.map(f => 
-      f.status === 'processing' 
-        ? { ...f, status: 'pending', progress: 0 }
-        : f
-    ));
-  };
-
-  const handleDeleteFile = (fileId: string) => {
-    setFiles(prev => prev.filter(f => f.id !== fileId));
-  };
-
-  const handleRetryFile = (fileId: string) => {
-    setFiles(prev => prev.map(f => 
-      f.id === fileId 
-        ? { ...f, status: 'pending', progress: 0, error: undefined }
-        : f
-    ));
-  };
-
-  const pendingFiles = files.filter(f => f.status === 'pending');
-  const processingFiles = files.filter(f => f.status === 'processing');
-  const completedFiles = files.filter(f => f.status === 'completed');
-  const errorFiles = files.filter(f => f.status === 'error');
-
   return (
-    <Box>
-      {/* Header */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Box>
-          <Typography variant="h4" component="h1" gutterBottom>
-            Dateiverarbeitung
+    <Box sx={{ p: 3 }}>
+      <Typography variant="h4" gutterBottom>
+        File Processing
+      </Typography>
+
+      {/* Configuration Panel */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            <Settings sx={{ mr: 1, verticalAlign: 'middle' }} />
+            Processing Configuration
           </Typography>
-          <Typography variant="body1" color="textSecondary">
-            Laden Sie Dateien hoch und verarbeiten Sie sie automatisch
-          </Typography>
-        </Box>
-        <Box display="flex" gap={1}>
-          <Button
-            variant="outlined"
-            startIcon={<SettingsIcon />}
-            onClick={() => setSettingsOpen(true)}
-          >
-            Einstellungen
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<RefreshIcon />}
-            onClick={() => window.location.reload()}
-          >
-            Aktualisieren
-          </Button>
-        </Box>
-      </Box>
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={6}>
+              <Typography variant="subtitle2" gutterBottom>
+                Processing Features
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <Chip 
+                  label="Duplicate Detection" 
+                  color={processingConfig.enableDuplicateDetection ? 'success' : 'default'}
+                  icon={<Storage />}
+                  onClick={() => setProcessingConfig(prev => ({
+                    ...prev,
+                    enableDuplicateDetection: !prev.enableDuplicateDetection
+                  }))}
+                />
+                <Chip 
+                  label="LLM Classification" 
+                  color={processingConfig.enableLLMClassification ? 'success' : 'default'}
+                  icon={<Psychology />}
+                  onClick={() => setProcessingConfig(prev => ({
+                    ...prev,
+                    enableLLMClassification: !prev.enableLLMClassification
+                  }))}
+                />
+                <Chip 
+                  label="Backup Before Processing" 
+                  color={processingConfig.enableBackup ? 'success' : 'default'}
+                  icon={<Storage />}
+                  onClick={() => setProcessingConfig(prev => ({
+                    ...prev,
+                    enableBackup: !prev.enableBackup
+                  }))}
+                />
+              </Box>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Typography variant="subtitle2" gutterBottom>
+                Performance Settings
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Box>
+                  <Typography variant="body2">Max Workers: {processingConfig.maxWorkers}</Typography>
+                  <input
+                    type="range"
+                    min="1"
+                    max="8"
+                    value={processingConfig.maxWorkers}
+                    onChange={(e) => setProcessingConfig(prev => ({
+                      ...prev,
+                      maxWorkers: parseInt(e.target.value)
+                    }))}
+                    style={{ width: '100%' }}
+                  />
+                </Box>
+                <Box>
+                  <Typography variant="body2">Batch Size: {processingConfig.batchSize}</Typography>
+                  <input
+                    type="range"
+                    min="5"
+                    max="50"
+                    value={processingConfig.batchSize}
+                    onChange={(e) => setProcessingConfig(prev => ({
+                      ...prev,
+                      batchSize: parseInt(e.target.value)
+                    }))}
+                    style={{ width: '100%' }}
+                  />
+                </Box>
+              </Box>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
 
-      {/* Statistics Cards */}
-      <Grid container spacing={3} mb={3}>
-        <Grid item xs={12} sm={6} md={3}>
+      {/* Statistics Panel */}
+      <Grid container spacing={3} sx={{ mb: 3 }}>
+        <Grid item xs={12} md={3}>
           <Card>
             <CardContent>
-              <Box display="flex" alignItems="center" justifyContent="space-between">
-                <Box>
-                  <Typography color="textSecondary" gutterBottom>
-                    Gesamt Dateien
-                  </Typography>
-                  <Typography variant="h4" component="div">
-                    {stats.totalFiles.toLocaleString()}
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'primary.main' }}>
-                  <FileIcon />
-                </Avatar>
-              </Box>
+              <Typography color="textSecondary" gutterBottom>
+                Total Files
+              </Typography>
+              <Typography variant="h4">
+                {stats?.totalFiles || 0}
+              </Typography>
             </CardContent>
           </Card>
         </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} md={3}>
           <Card>
             <CardContent>
-              <Box display="flex" alignItems="center" justifyContent="space-between">
-                <Box>
-                  <Typography color="textSecondary" gutterBottom>
-                    Verarbeitet
-                  </Typography>
-                  <Typography variant="h4" component="div" color="success.main">
-                    {stats.processedFiles.toLocaleString()}
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'success.main' }}>
-                  <CheckCircleIcon />
-                </Avatar>
-              </Box>
+              <Typography color="textSecondary" gutterBottom>
+                Processed
+              </Typography>
+              <Typography variant="h4" color="success.main">
+                {stats?.processedFiles || 0}
+              </Typography>
             </CardContent>
           </Card>
         </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} md={3}>
           <Card>
             <CardContent>
-              <Box display="flex" alignItems="center" justifyContent="space-between">
-                <Box>
-                  <Typography color="textSecondary" gutterBottom>
-                    Wartend
-                  </Typography>
-                  <Typography variant="h4" component="div" color="warning.main">
-                    {pendingFiles.length}
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'warning.main' }}>
-                  <WarningIcon />
-                </Avatar>
-              </Box>
+              <Typography color="textSecondary" gutterBottom>
+                Duplicates Found
+              </Typography>
+              <Typography variant="h4" color="warning.main">
+                {stats?.duplicateFiles || 0}
+              </Typography>
             </CardContent>
           </Card>
         </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} md={3}>
           <Card>
             <CardContent>
-              <Box display="flex" alignItems="center" justifyContent="space-between">
-                <Box>
-                  <Typography color="textSecondary" gutterBottom>
-                    Fehler
-                  </Typography>
-                  <Typography variant="h4" component="div" color="error.main">
-                    {errorFiles.length}
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'error.main' }}>
-                  <ErrorIcon />
-                </Avatar>
-              </Box>
+              <Typography color="textSecondary" gutterBottom>
+                LLM Classifications
+              </Typography>
+              <Typography variant="h4" color="info.main">
+                {stats?.llmClassifications || 0}
+              </Typography>
             </CardContent>
           </Card>
         </Grid>
       </Grid>
 
-      {/* Upload Area */}
+      {/* File Upload Area */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
+          <Typography variant="h6" gutterBottom>
+            <CloudUpload sx={{ mr: 1, verticalAlign: 'middle' }} />
+            Upload Files
+          </Typography>
+          
           <Box
             {...getRootProps()}
             sx={{
               border: '2px dashed',
               borderColor: isDragActive ? 'primary.main' : 'grey.300',
               borderRadius: 2,
-              p: 4,
+              p: 3,
               textAlign: 'center',
               cursor: 'pointer',
-              bgcolor: isDragActive ? 'primary.50' : 'grey.50',
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                borderColor: 'primary.main',
-                bgcolor: 'primary.50'
-              }
+              backgroundColor: isDragActive ? 'action.hover' : 'background.paper',
+              transition: 'all 0.2s'
             }}
           >
             <input {...getInputProps()} />
-            <CloudUploadIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
-            <Typography variant="h6" gutterBottom>
-              {isDragActive ? 'Dateien hier ablegen' : 'Dateien hier ablegen oder klicken zum Auswählen'}
+            <CloudUpload sx={{ fontSize: 48, color: 'grey.400', mb: 2 }} />
+            <Typography variant="h6" color="textSecondary">
+              {isDragActive ? 'Drop files here' : 'Drag & drop files here, or click to select'}
             </Typography>
             <Typography variant="body2" color="textSecondary">
-              Unterstützte Formate: PDF, DOC, DOCX, JPG, PNG, TXT, XLS, XLSX
-            </Typography>
-            <Typography variant="caption" color="textSecondary" display="block" mt={1}>
-              Maximale Dateigröße: {processingSettings.maxFileSize} MB
+              Supports PDF, DOC, DOCX, XLS, XLSX, images, videos, and text files
             </Typography>
           </Box>
+
+          {selectedFiles.length > 0 && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Selected Files ({selectedFiles.length})
+              </Typography>
+              <List dense>
+                {selectedFiles.map((file, index) => (
+                  <ListItem key={index}>
+                    <ListItemText
+                      primary={file.name}
+                      secondary={`${formatFileSize(file.size)} - ${file.type}`}
+                    />
+                    <ListItemSecondaryAction>
+                      <IconButton
+                        edge="end"
+                        onClick={() => setSelectedFiles(prev => prev.filter((_, i) => i !== index))}
+                      >
+                        <Delete />
+                      </IconButton>
+                    </ListItemSecondaryAction>
+                  </ListItem>
+                ))}
+              </List>
+              
+              <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
+                <Button
+                  variant="contained"
+                  startIcon={<CloudUpload />}
+                  onClick={handleUpload}
+                  disabled={loading}
+                >
+                  Upload Files
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<PlayArrow />}
+                  onClick={handleProcess}
+                  disabled={loading || selectedFiles.length === 0}
+                >
+                  Process Files
+                </Button>
+              </Box>
+            </Box>
+          )}
         </CardContent>
       </Card>
 
-      {/* Processing Controls */}
-      {files.length > 0 && (
-        <Card sx={{ mb: 3 }}>
-          <CardContent>
-            <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
-              <Typography variant="h6">
-                Verarbeitungssteuerung
-              </Typography>
-              <Box display="flex" gap={1}>
-                {!processing ? (
-                  <Button
-                    variant="contained"
-                    startIcon={<PlayIcon />}
-                    onClick={handleStartProcessing}
-                    disabled={pendingFiles.length === 0}
-                  >
-                    Verarbeitung starten
-                  </Button>
-                ) : (
-                  <>
-                    {paused ? (
-                      <Button
-                        variant="outlined"
-                        startIcon={<PlayIcon />}
-                        onClick={handleResumeProcessing}
-                      >
-                        Fortsetzen
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outlined"
-                        startIcon={<PauseIcon />}
-                        onClick={handlePauseProcessing}
-                      >
-                        Pausieren
-                      </Button>
-                    )}
-                    <Button
-                      variant="outlined"
-                      color="error"
-                      startIcon={<StopIcon />}
-                      onClick={handleStopProcessing}
-                    >
-                      Stoppen
-                    </Button>
-                  </>
-                )}
-              </Box>
-            </Box>
-
-            {processing && (
-              <Box>
-                <Typography variant="body2" color="textSecondary" mb={1}>
-                  Verarbeitung läuft... {processingFiles.length} Dateien werden verarbeitet
-                </Typography>
-                <LinearProgress 
-                  variant="determinate" 
-                  value={(completedFiles.length / files.length) * 100}
-                  sx={{ height: 8, borderRadius: 4 }}
-                />
-              </Box>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* File List */}
-      {files.length > 0 && (
-        <Card>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Dateien ({files.length})
+      {/* Processing Jobs */}
+      <Card>
+        <CardContent>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6">
+              Processing Jobs
             </Typography>
-            
-            <List>
-              {files.map((file) => (
-                <React.Fragment key={file.id}>
-                  <ListItem>
-                    <ListItemIcon>
-                      {getFileIcon(file.type)}
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={
-                        <Box display="flex" alignItems="center" gap={1}>
-                          <Typography variant="body1" fontWeight="medium">
-                            {file.name}
-                          </Typography>
-                          <Chip
-                            label={file.status}
-                            color={getStatusColor(file.status) as any}
-                            size="small"
-                            icon={getStatusIcon(file.status)}
+            <Button
+              startIcon={<Refresh />}
+              onClick={() => dispatch(fetchProcessingJobs())}
+              disabled={loading}
+            >
+              Refresh
+            </Button>
+          </Box>
+
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+
+          {loading && <LinearProgress sx={{ mb: 2 }} />}
+
+          <TableContainer component={Paper}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Job ID</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Files</TableCell>
+                  <TableCell>Progress</TableCell>
+                  <TableCell>Created</TableCell>
+                  <TableCell>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {jobs.map((job) => (
+                  <TableRow key={job.id}>
+                    <TableCell>{job.id}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={job.status}
+                        color={getStatusColor(job.status) as any}
+                        icon={getStatusIcon(job.status)}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">
+                        {job.processedFiles.length} / {job.files.length}
+                      </Typography>
+                      {job.duplicates.length > 0 && (
+                        <Typography variant="caption" color="warning.main">
+                          {job.duplicates.length} duplicates
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        <Box sx={{ width: '100%', mr: 1 }}>
+                          <LinearProgress 
+                            variant="determinate" 
+                            value={job.progress} 
+                            color={job.status === 'failed' ? 'error' : 'primary'}
                           />
                         </Box>
-                      }
-                      secondary={
-                        <Box>
-                          <Typography variant="body2" color="textSecondary">
-                            {formatBytes(file.size)} • {file.type} • {file.uploadedAt.toLocaleString()}
-                          </Typography>
-                          {file.status === 'processing' && (
-                            <Box mt={1}>
-                              <LinearProgress 
-                                variant="determinate" 
-                                value={file.progress}
-                                sx={{ height: 4, borderRadius: 2 }}
-                              />
-                              <Typography variant="caption" color="textSecondary">
-                                {file.progress.toFixed(1)}% abgeschlossen
-                              </Typography>
-                            </Box>
-                          )}
-                          {file.error && (
-                            <Alert severity="error" sx={{ mt: 1 }}>
-                              {file.error}
-                            </Alert>
-                          )}
-                        </Box>
-                      }
-                    />
-                    <Box display="flex" gap={1}>
-                      {file.status === 'error' && (
-                        <Tooltip title="Wiederholen">
-                          <IconButton 
-                            size="small" 
-                            onClick={() => handleRetryFile(file.id)}
-                          >
-                            <RefreshIcon />
-                          </IconButton>
-                        </Tooltip>
-                      )}
-                      <Tooltip title="Löschen">
-                        <IconButton 
-                          size="small" 
-                          color="error"
-                          onClick={() => handleDeleteFile(file.id)}
-                        >
-                          <DeleteIcon />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
-                  </ListItem>
-                  <Divider />
-                </React.Fragment>
-              ))}
-            </List>
-          </CardContent>
-        </Card>
-      )}
+                        <Typography variant="body2" color="textSecondary">
+                          {Math.round(job.progress)}%
+                        </Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell>
+                      {new Date(job.createdAt).toLocaleString()}
+                    </TableCell>
+                    <TableCell>
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        {job.status === 'processing' && (
+                          <Tooltip title="Stop Processing">
+                            <IconButton
+                              size="small"
+                              onClick={() => dispatch(stopProcessing(job.id))}
+                            >
+                              <Stop />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                        {job.status === 'completed' && (
+                          <Tooltip title="Rollback Job">
+                            <IconButton
+                              size="small"
+                              onClick={() => setRollbackDialog({ open: true, jobId: job.id })}
+                            >
+                              <Undo />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </Box>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </CardContent>
+      </Card>
 
-      {/* Settings Dialog */}
-      <Dialog open={settingsOpen} onClose={() => setSettingsOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>Verarbeitungseinstellungen</DialogTitle>
+      {/* Rollback Confirmation Dialog */}
+      <Dialog
+        open={rollbackDialog.open}
+        onClose={() => setRollbackDialog({ open: false, jobId: null })}
+      >
+        <DialogTitle>Confirm Rollback</DialogTitle>
         <DialogContent>
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <Typography variant="h6" gutterBottom>
-                Verarbeitungsoptionen
-              </Typography>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={processingSettings.enableOCR}
-                    onChange={(e) => setProcessingSettings(prev => ({
-                      ...prev,
-                      enableOCR: e.target.checked
-                    }))}
-                  />
-                }
-                label="OCR aktivieren"
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={processingSettings.extractMetadata}
-                    onChange={(e) => setProcessingSettings(prev => ({
-                      ...prev,
-                      extractMetadata: e.target.checked
-                    }))}
-                  />
-                }
-                label="Metadaten extrahieren"
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={processingSettings.generateThumbnails}
-                    onChange={(e) => setProcessingSettings(prev => ({
-                      ...prev,
-                      generateThumbnails: e.target.checked
-                    }))}
-                  />
-                }
-                label="Thumbnails generieren"
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <Typography variant="h6" gutterBottom>
-                Dateibeschränkungen
-              </Typography>
-              <TextField
-                fullWidth
-                label="Maximale Dateigröße (MB)"
-                type="number"
-                value={processingSettings.maxFileSize}
-                onChange={(e) => setProcessingSettings(prev => ({
-                  ...prev,
-                  maxFileSize: parseInt(e.target.value)
-                }))}
-                sx={{ mb: 2 }}
-              />
-              <FormControl fullWidth>
-                <InputLabel>Erlaubte Dateitypen</InputLabel>
-                <Select
-                  multiple
-                  value={processingSettings.allowedTypes}
-                  onChange={(e) => setProcessingSettings(prev => ({
-                    ...prev,
-                    allowedTypes: e.target.value as string[]
-                  }))}
-                  renderValue={(selected) => selected.join(', ')}
-                >
-                  <MenuItem value="pdf">PDF</MenuItem>
-                  <MenuItem value="doc">DOC</MenuItem>
-                  <MenuItem value="docx">DOCX</MenuItem>
-                  <MenuItem value="jpg">JPG</MenuItem>
-                  <MenuItem value="png">PNG</MenuItem>
-                  <MenuItem value="txt">TXT</MenuItem>
-                  <MenuItem value="xls">XLS</MenuItem>
-                  <MenuItem value="xlsx">XLSX</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-          </Grid>
+          <Typography>
+            Are you sure you want to rollback this processing job? This will:
+          </Typography>
+          <List dense>
+            <ListItem>
+              <ListItemText primary="• Move processed files back to their original locations" />
+            </ListItem>
+            <ListItem>
+              <ListItemText primary="• Remove database entries for processed documents" />
+            </ListItem>
+            <ListItem>
+              <ListItemText primary="• Restore the system to the state before processing" />
+            </ListItem>
+          </List>
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            This action cannot be undone!
+          </Alert>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setSettingsOpen(false)}>Abbrechen</Button>
-          <Button variant="contained" onClick={() => setSettingsOpen(false)}>
-            Speichern
+          <Button onClick={() => setRollbackDialog({ open: false, jobId: null })}>
+            Cancel
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={() => rollbackDialog.jobId && handleRollback(rollbackDialog.jobId)}
+          >
+            Rollback
           </Button>
         </DialogActions>
       </Dialog>

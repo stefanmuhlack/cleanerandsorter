@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # Test Database
+  test-postgres:
+    image: postgres:15-alpine
+    container_name: cas_test_postgres
+    environment:
+      POSTGRES_DB: cas_dms_test
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - test_postgres_data:/var/lib/postgresql/data
+
+  # Test MinIO
+  test-minio:
+    image: minio/minio:latest
+    container_name: cas_test_minio
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    environment:
+      MINIO_ROOT_USER: testadmin
+      MINIO_ROOT_PASSWORD: testadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - test_minio_data:/data
+
+  # Test RabbitMQ
+  test-rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: cas_test_rabbitmq
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: test_user
+      RABBITMQ_DEFAULT_PASS: test_password
+    volumes:
+      - test_rabbitmq_data:/var/lib/rabbitmq
+
+  # Test Elasticsearch
+  test-elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: cas_test_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms256m -Xmx256m"
+    ports:
+      - "9201:9200"
+    volumes:
+      - test_elasticsearch_data:/usr/share/elasticsearch/data
+
+  # Test Ingest Service
+  test-ingest-service:
+    build:
+      context: ./ingest-service
+      dockerfile: Dockerfile
+    container_name: cas_test_ingest
+    environment:
+      - MINIO_ENDPOINT=test-minio:9000
+      - MINIO_ACCESS_KEY=testadmin
+      - MINIO_SECRET_KEY=testadmin
+      - RABBITMQ_URL=amqp://test_user:test_password@test-rabbitmq:5672/
+      - ELASTICSEARCH_URL=http://test-elasticsearch:9200
+      - LOG_LEVEL=DEBUG
+      - DATABASE_URL=postgresql+asyncpg://test_user:test_password@test-postgres:5432/cas_dms_test
+    volumes:
+      - ./config/sorting-rules.yaml:/app/config/sorting-rules.yaml:ro
+      - ./test-data:/data/source:ro
+      - ./test-output:/data/sorted
+    depends_on:
+      - test-postgres
+      - test-minio
+      - test-rabbitmq
+      - test-elasticsearch
+    command: ["python", "-m", "pytest", "/app/tests", "-v"]
+
+volumes:
+  test_postgres_data:
+  test_minio_data:
+  test_rabbitmq_data:
+  test_elasticsearch_data: 

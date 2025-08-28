@@ -1,0 +1,147 @@
+1. Grundlegende Architektur
+Datenhaltung
+
+Speicherort für die sortierten Dateien: Verwenden Sie einen Objektspeicher (z. B. MinIO als selbst‑gehostete S3‑Alternative) oder ein NAS, das per SMB/NFS eingebunden wird. Objektspeicher hat Vorteile in Bezug auf Skalierbarkeit und lässt sich von verschiedenen Containern aus einheitlich ansprechen.
+
+Metadaten und Konfigurationsdaten: PostgreSQL oder MariaDB, betrieben in einem eigenen Container (wird für das DMS benötigt).
+
+Kern‑Services (Containerisiert)
+
+Ingest/Sortier‑Service
+
+Technologie: Python‑Anwendung, die auf dem organize‑Konzept basiert.
+
+Funktion: Durchsucht definierte Quellverzeichnisse (eingehängte Netzlaufwerke) nach neuen/aktualisierten Dateien, extrahiert Metadaten (Dateiname, Datum, EXIF, ggf. Inhalte via OCR) und entscheidet anhand einer Konfigurationsdatei in welchem Zielordner/Projekt die Datei abgelegt werden soll.
+
+Deployment: Als Docker‑Container, der per CronJob oder über Dateiwatcher (inotify) ausgelöst wird. Konfiguration wird per Volume eingebunden.
+
+Indexierungs‑Service
+
+Technologie: Diskover (Community Edition) plus Elasticsearch/OpenSearch.
+
+Funktion: Indexiert den gesamten Datei‑Baum (nachdem die Dateien sortiert wurden) und schreibt Metadaten in Elasticsearch.
+
+Deployment: Ein Container für Diskover, ein oder mehrere Elasticsearch‑Knoten. Diskover wird zeitgesteuert (z. B. per Cron) oder ereignisbasiert vom Ingest‑Service getriggert.
+
+Dokumentenmanagement‑System (DMS)
+
+Variante: Paperless‑ngx (für OCR und intelligentes Tagging) oder Teedy (für Team‑Kollaboration und Versionierung).
+
+Funktion: Bietet eine Weboberfläche, erlaubt das Suchen, Anzeigen und Bearbeiten von Dokumenten, führt OCR durch und speichert Metadaten.
+
+Deployment: Container mit dem DMS, verbunden mit einer Datenbank (PostgreSQL) und einem Objekt‑Speicher (MinIO). Wenn Sie Paperless‑ngx wählen, wird Tesseract‑OCR automatisch integriert.
+
+Search‑/Dashboard‑Service
+
+Technologie: Kibana (für Elasticsearch) oder das Dashboard von OpenSearch.
+
+Funktion: Bietet dem Team eine Volltext‑Suche über alle indexierten Dateien sowie Analysefunktionen (z. B. Speichernutzung, Top‑Kategorien).
+
+Deployment: Als Container im gleichen Cluster; kommuniziert mit Elasticsearch.
+
+Messaging/Orchestrierung (optional aber empfehlenswert)
+
+Technologie: RabbitMQ oder Redis Streams.
+
+Funktion: Der Ingest‑Service sendet eine Nachricht, wenn neue Dateien verschoben werden; der Indexer holt diese Nachrichten und startet Indexläufe. Damit können Prozesse entkoppelt und skalierbar gemacht werden.
+
+Front‑End / Benutzeroberfläche
+
+Web‑UI:
+
+Das DMS selbst liefert die Hauptoberfläche (Dokumentsuche, OCR, Versionierung).
+
+Für die Verwaltung der Sortier‑Regeln und das Überwachen der Abläufe empfehle ich ein kleines Admin‑Panel in React/Vue (kann auch im gleichen Repo liegen), das direkt auf die Konfigurations‑API des Ingest‑Service zugreift.
+
+Optional: Ein Dashboard (Kibana) für detaillierte Analysen über das Archiv.
+
+2. Orchestrierung & Deployment
+Lokale Entwicklung / Test
+
+Docker Compose: Legen Sie eine docker-compose.yml an, die folgende Services definiert:
+
+minio (Objektspeicher),
+
+postgres (Datenbank),
+
+dms (Paperless‑ngx oder Teedy),
+
+ingest-service (Ihr Python‑Container),
+
+diskover und elasticsearch,
+
+optional kibana und rabbitmq.
+
+Damit können Sie den gesamten Stack auf einem Entwicklerrechner oder einem Testserver starten.
+
+Produktion
+
+Kubernetes / K3s: Für eine produktive Umgebung oder höhere Verfügbarkeit.
+
+Verwenden Sie StatefulSets für Elasticsearch und die Datenbank.
+
+Deployen Sie die übrigen Dienste als Deployments mit Horizontal Pod Autoscaler (HPA), falls Lastspitzen zu erwarten sind.
+
+Nutzen Sie Persistent Volume Claims (PVCs) für Daten (z. B. MinIO‑Buckets, DMS‑Volumes).
+
+CI/CD:
+
+Versionieren Sie alle Services in einem Monorepo oder getrennt in mehreren Repos.
+
+Nutzen Sie GitHub Actions oder GitLab CI, um Docker‑Images zu bauen und in eine Registry zu pushen.
+
+Automatisieren Sie Deployments via Helm Charts oder Kustomize.
+
+Verwenden Sie Secret‑Management (z. B. Kubernetes Secrets oder HashiCorp Vault), um Zugangsdaten für Datenbanken und Speicher zu verwalten.
+
+Monitoring und Logging:
+
+Prometheus/Grafana zur Überwachung von Container‑Ressourcen, Fehlern und Durchsatz.
+
+ELK‑Stack (Elasticsearch, Logstash, Kibana) oder Loki/Promtail, um Logs zentral zu sammeln.
+
+Alerts über Slack/Teams, falls Fehler beim Verschieben oder Indexieren auftreten.
+
+3. Integrationsfluss
+
+Mountpoints einbinden: Binden Sie Ihre SMB/NFS‑Shares auf allen Nodes oder im Ingest‑Container als Volumes ein.
+
+Ingest‑Service:
+
+Liest die Konfigurationsdatei (z. B. in YAML in einem Config‑Volume) mit den Schlüsselwörtern für Kategorien und Projekte.
+
+Überwacht per Cron oder File‑Watcher die Quellverzeichnisse.
+
+Verschiebt Dateien in den Zielpfad (z. B. in einen MinIO‑Bucket oder ein sortiertes NAS‑Verzeichnis) und erzeugt logische Ordner gemäss Regelwerk.
+
+Sendet eine Nachricht an RabbitMQ, sobald ein Batch abgeschlossen ist.
+
+Indexierung:
+
+Der Diskover‑Container hört auf die Nachrichten oder wird periodisch ausgelöst.
+
+Diskover crawlt den Zielpfad und aktualisiert die Indexe in Elasticsearch.
+
+DMS:
+
+Überwacht (bei Paperless‑ngx) einen „Import“-Ordner im Objektspeicher. Neu verschobene Dateien werden importiert, OCR läuft, Tags werden anhand der Metadaten gesetzt.
+
+Nutzer können über die DMS‑Oberfläche Dokumente suchen und verwalten.
+
+Dashboard:
+
+Kibana/React‑Admin zeigt Statistiken über das Archiv (Anzahl Dateien pro Kunde, Top‑Formate, verwaiste Dateien etc.).
+
+Administratoren können Regeln über die UI anpassen (die Konfig‑Datei wird versioniert und der Ingest‑Service neu geladen).
+
+4. Vorteile dieser Lösung
+
+Skalierbarkeit: Containerisierte Services können bei Bedarf horizontal skaliert werden; Elasticsearch kann ausgebaut werden, wenn der Index wächst.
+
+Transparente Workflows: Durch Messaging und Logs sehen Sie jederzeit, welche Dateien wohin verschoben wurden und ob Fehler aufgetreten sind.
+
+Erweiterbarkeit: Zusatzfunktionen wie KI‑gestützte Klassifizierung können in separaten Microservices ergänzt werden (z. B. ein OCR‑Service oder ein NLP‑Service zur Extraktion von Themen).
+
+Einheitliche Oberfläche: Das DMS bietet Ihrem Team eine zentrale Anlaufstelle; das Admin‑Panel erleichtert die Pflege der Regeln und die Überwachung.
+
+Mit diesem Dev‑Ops‑Stack erhalten Sie eine vollwertige Lösung, die sowohl das automatisierte Sortieren und Indexieren als auch die komfortable Nutzung über eine Oberfläche abdeckt. Durch die Entkopplung der Dienste (Ingest, Indexierung, DMS, Dashboard) bleibt das System wartbar und kann an zukünftige Anforderungen angepasst werden.

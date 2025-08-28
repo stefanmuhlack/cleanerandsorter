@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cas-dms-config
+  namespace: cas-dms
+data:
+  # Ingest Service Configuration
+  sorting-rules.yaml: |
+    rules:
+      - name: "Rechnungen"
+        keywords: ["rechnung", "invoice", "bill"]
+        target_path: "documents/invoices/{year}/{month}"
+        priority: 10
+        enabled: true
+        file_types: ["pdf", "document", "spreadsheet"]
+        min_file_size: 1024
+        max_file_size: 10485760
+      
+      - name: "Verträge"
+        keywords: ["vertrag", "contract", "agreement"]
+        target_path: "documents/contracts/{year}"
+        priority: 20
+        enabled: true
+        file_types: ["pdf", "document"]
+        min_file_size: 1024
+        max_file_size: 52428800
+      
+      - name: "Finanzberichte"
+        keywords: ["finanz", "financial", "bilanz", "balance"]
+        target_path: "documents/financial/{year}/{quarter}"
+        priority: 30
+        enabled: true
+        file_types: ["pdf", "document", "spreadsheet"]
+        min_file_size: 1024
+        max_file_size: 10485760
+
+  # Prometheus Configuration
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    rule_files:
+      # - "first_rules.yml"
+      # - "second_rules.yml"
+
+    scrape_configs:
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+
+      - job_name: 'cas-ingest-service'
+        static_configs:
+          - targets: ['cas-ingest-service:8000']
+        metrics_path: '/metrics'
+
+      - job_name: 'cas-admin-dashboard'
+        static_configs:
+          - targets: ['cas-admin-dashboard:3000']
+
+      - job_name: 'paperless-ngx'
+        static_configs:
+          - targets: ['cas-paperless:8000']
+
+  # Grafana Dashboard Configuration
+  grafana-dashboard.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "CAS DMS Dashboard",
+        "tags": ["cas", "dms"],
+        "timezone": "browser",
+        "panels": [
+          {
+            "id": 1,
+            "title": "File Processing Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(http_requests_total{endpoint=\"/api/files/process\"}[5m])",
+                "legendFormat": "Files/sec"
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "title": "Processing Errors",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(http_requests_total{status=\"500\"}[5m])",
+                "legendFormat": "Errors/sec"
+              }
+            ]
+          }
+        ]
+      }
+    } 

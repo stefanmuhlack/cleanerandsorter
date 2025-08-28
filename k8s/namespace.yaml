@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cas-dms
+  labels:
+    name: cas-dms
+    app: cas-dms 

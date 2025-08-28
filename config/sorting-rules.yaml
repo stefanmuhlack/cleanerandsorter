@@ -1,0 +1,232 @@
+# CAS Document Management System - Sorting Rules Configuration
+# This file defines rules for automatically sorting documents into categories
+
+rules:
+  # Invoice and billing documents
+  - name: "Rechnungen"
+    keywords: 
+      - "rechnung"
+      - "invoice"
+      - "bill"
+      - "zahlung"
+      - "payment"
+      - "abrechnung"
+      - "billing"
+    target_path: "documents/invoices/{year}/{month}"
+    priority: 10
+    enabled: true
+    file_types:
+      - "pdf"
+      - "document"
+      - "spreadsheet"
+    min_file_size: 1024  # 1KB
+    max_file_size: 10485760  # 10MB
+
+  # Contracts and agreements
+  - name: "Verträge"
+    keywords:
+      - "vertrag"
+      - "contract"
+      - "agreement"
+      - "vereinbarung"
+      - "abkommen"
+      - "pact"
+    target_path: "documents/contracts/{year}"
+    priority: 20
+    enabled: true
+    file_types:
+      - "pdf"
+      - "document"
+    min_file_size: 1024
+    max_file_size: 52428800  # 50MB
+
+  # Financial reports
+  - name: "Finanzberichte"
+    keywords:
+      - "finanz"
+      - "financial"
+      - "bilanz"
+      - "balance"
+      - "gewinn"
+      - "profit"
+      - "verlust"
+      - "loss"
+      - "umsatz"
+      - "revenue"
+      - "kosten"
+      - "cost"
+    target_path: "documents/financial/{year}/{quarter}"
+    priority: 30
+    enabled: true
+    file_types:
+      - "pdf"
+      - "document"
+      - "spreadsheet"
+    min_file_size: 1024
+    max_file_size: 10485760
+
+  # HR and personnel documents
+  - name: "Personal"
+    keywords:
+      - "personal"
+      - "hr"
+      - "mitarbeiter"
+      - "employee"
+      - "bewerbung"
+      - "application"
+      - "lebenslauf"
+      - "cv"
+      - "resume"
+      - "arbeitsvertrag"
+      - "employment"
+    target_path: "documents/hr/{year}"
+    priority: 40
+    enabled: true
+    file_types:
+      - "pdf"
+      - "document"
+      - "image"
+    min_file_size: 1024
+    max_file_size: 20971520  # 20MB
+
+  # Marketing materials
+  - name: "Marketing"
+    keywords:
+      - "marketing"
+      - "werbung"
+      - "advertisement"
+      - "kampagne"
+      - "campaign"
+      - "flyer"
+      - "broschüre"
+      - "brochure"
+      - "präsentation"
+      - "presentation"
+    target_path: "documents/marketing/{year}/{month}"
+    priority: 50
+    enabled: true
+    file_types:
+      - "pdf"
+      - "document"
+      - "presentation"
+      - "image"
+    min_file_size: 1024
+    max_file_size: 52428800
+
+  # Technical documentation
+  - name: "Technische Dokumentation"
+    keywords:
+      - "technisch"
+      - "technical"
+      - "dokumentation"
+      - "documentation"
+      - "anleitung"
+      - "manual"
+      - "handbuch"
+      - "handbook"
+      - "spezifikation"
+      - "specification"
+      - "architektur"
+      - "architecture"
+    target_path: "documents/technical/{category}"
+    priority: 60
+    enabled: true
+    file_types:
+      - "pdf"
+      - "document"
+      - "spreadsheet"
+    min_file_size: 1024
+    max_file_size: 10485760
+
+  # Legal documents
+  - name: "Rechtliche Dokumente"
+    keywords:
+      - "recht"
+      - "legal"
+      - "gesetz"
+      - "law"
+      - "anwalt"
+      - "lawyer"
+      - "gericht"
+      - "court"
+      - "klage"
+      - "lawsuit"
+      - "urteil"
+      - "judgment"
+    target_path: "documents/legal/{year}"
+    priority: 70
+    enabled: true
+    file_types:
+      - "pdf"
+      - "document"
+    min_file_size: 1024
+    max_file_size: 52428800
+
+  # Project documents
+  - name: "Projekte"
+    keywords:
+      - "projekt"
+      - "project"
+      - "planung"
+      - "planning"
+      - "roadmap"
+      - "milestone"
+      - "meilenstein"
+      - "task"
+      - "aufgabe"
+    target_path: "documents/projects/{project_name}"
+    priority: 80
+    enabled: true
+    file_types:
+      - "pdf"
+      - "document"
+      - "spreadsheet"
+      - "presentation"
+    min_file_size: 1024
+    max_file_size: 20971520
+
+  # Images and photos
+  - name: "Bilder"
+    keywords:
+      - "bild"
+      - "image"
+      - "photo"
+      - "foto"
+      - "screenshot"
+      - "screenshot"
+    target_path: "documents/images/{year}/{month}"
+    priority: 90
+    enabled: true
+    file_types:
+      - "image"
+    min_file_size: 1024
+    max_file_size: 104857600  # 100MB
+
+  # Archive and backup files
+  - name: "Archive"
+    keywords:
+      - "archiv"
+      - "archive"
+      - "backup"
+      - "sicherung"
+      - "zip"
+      - "rar"
+      - "tar"
+      - "gz"
+    target_path: "documents/archive/{year}"
+    priority: 100
+    enabled: true
+    file_types:
+      - "archive"
+    min_file_size: 1024
+    max_file_size: 1048576000  # 1GB
+
+# Default rule for unmatched files
+default_rule:
+  name: "Unsortiert"
+  target_path: "documents/unsorted/{year}/{month}"
+  priority: 999
+  enabled: true
+  file_types: null  # Accept all file types
+  min_file_size: 0
+  max_file_size: null  # No size limit 

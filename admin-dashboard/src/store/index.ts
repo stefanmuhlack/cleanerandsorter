@@ -1,7 +1,7 @@
 import { configureStore } from '@reduxjs/toolkit';
-import statisticsReducer from './slices/statisticsSlice.ts';
-import fileProcessingReducer from './slices/fileProcessingSlice.ts';
-import sortingRulesReducer from './slices/sortingRulesSlice.ts';
+import statisticsReducer from './slices/statisticsSlice';
+import fileProcessingReducer from './slices/fileProcessingSlice';
+import sortingRulesReducer from './slices/sortingRulesSlice';
 
 export const store = configureStore({
   reducer: {

@@ -3,15 +3,15 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
 import { Provider } from 'react-redux';
-import { store } from './store/index.ts';
+import { store } from './store/index';
 
 // Import components
-import Layout from './components/Layout.tsx';
-import Dashboard from './pages/Dashboard.tsx';
-import FileProcessing from './pages/FileProcessing.tsx';
-import SortingRules from './pages/SortingRules.tsx';
-import Statistics from './pages/Statistics.tsx';
-import Settings from './pages/Settings.tsx';
+import Layout from './components/Layout';
+import Dashboard from './pages/Dashboard';
+import FileProcessing from './pages/FileProcessing';
+import SortingRules from './pages/SortingRules';
+import Statistics from './pages/Statistics';
+import Settings from './pages/Settings';
 
 const theme = createTheme({
   palette: {

@@ -12,9 +12,7 @@ import {
   Alert,
   Chip,
   Slider,
-  InputAdornment,
-  Select,
-  MenuItem
+  InputAdornment
 } from '@mui/material';
 import {
   Settings as SettingsIcon,
@@ -183,7 +181,7 @@ const Settings: React.FC = () => {
                   sx={{ ml: 'auto' }}
                 />
               </Box>
-
+              
               <FormControlLabel
                 control={
                   <Switch
@@ -191,7 +189,7 @@ const Settings: React.FC = () => {
                     onChange={(e) => setLlmConfig(prev => ({ ...prev, enabled: e.target.checked }))}
                   />
                 }
-                label="Enable LLM Classification"
+                label="Enable LLM Processing"
               />
 
               <TextField
@@ -204,9 +202,9 @@ const Settings: React.FC = () => {
                 disabled={!llmConfig.enabled}
               >
                 {availableModels.map((model) => (
-                  <MenuItem key={model} value={model}>
+                  <option key={model} value={model}>
                     {model}
-                  </MenuItem>
+                  </option>
                 ))}
               </TextField>
 
@@ -219,53 +217,26 @@ const Settings: React.FC = () => {
                 disabled={!llmConfig.enabled}
               />
 
-              <Typography gutterBottom sx={{ mt: 2 }}>
-                Temperature: {llmConfig.temperature}
-              </Typography>
-              <Slider
-                value={llmConfig.temperature}
-                onChange={(_, value) => setLlmConfig(prev => ({ ...prev, temperature: value as number }))}
-                min={0}
-                max={1}
-                step={0.1}
-                disabled={!llmConfig.enabled}
-                marks={[
-                  { value: 0, label: '0' },
-                  { value: 0.5, label: '0.5' },
-                  { value: 1, label: '1' }
-                ]}
-              />
-
-              <TextField
-                fullWidth
-                label="Max Tokens"
-                type="number"
-                value={llmConfig.maxTokens}
-                onChange={(e) => setLlmConfig(prev => ({ ...prev, maxTokens: parseInt(e.target.value) }))}
-                margin="normal"
-                disabled={!llmConfig.enabled}
-              />
-
-              <TextField
-                fullWidth
-                label="Timeout (seconds)"
-                type="number"
-                value={llmConfig.timeout}
-                onChange={(e) => setLlmConfig(prev => ({ ...prev, timeout: parseInt(e.target.value) }))}
-                margin="normal"
-                disabled={!llmConfig.enabled}
-              />
-
               <Box sx={{ mt: 2 }}>
-                <Button
-                  variant="outlined"
-                  startIcon={<TestConnectionIcon />}
-                  onClick={() => handleTestConnection('llm')}
-                  disabled={!llmConfig.enabled || testing}
-                >
-                  Test Connection
-                </Button>
+                <Typography gutterBottom>Temperature: {llmConfig.temperature}</Typography>
+                <Slider
+                  value={llmConfig.temperature}
+                  onChange={(_, value) => setLlmConfig(prev => ({ ...prev, temperature: value as number }))}
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  disabled={!llmConfig.enabled}
+                />
               </Box>
+
+              <Button
+                startIcon={<TestConnectionIcon />}
+                onClick={() => handleTestConnection('llm')}
+                disabled={!llmConfig.enabled || testing}
+                sx={{ mt: 2 }}
+              >
+                Test Connection
+              </Button>
             </CardContent>
           </Card>
         </Grid>
@@ -284,7 +255,7 @@ const Settings: React.FC = () => {
                   sx={{ ml: 'auto' }}
                 />
               </Box>
-
+              
               <FormControlLabel
                 control={
                   <Switch
@@ -292,7 +263,7 @@ const Settings: React.FC = () => {
                     onChange={(e) => setNasConfig(prev => ({ ...prev, enabled: e.target.checked }))}
                   />
                 }
-                label="Enable NAS Mount"
+                label="Enable NAS Storage"
               />
 
               <TextField
@@ -306,7 +277,7 @@ const Settings: React.FC = () => {
 
               <TextField
                 fullWidth
-                label="Share Path"
+                label="Path"
                 value={nasConfig.path}
                 onChange={(e) => setNasConfig(prev => ({ ...prev, path: e.target.value }))}
                 margin="normal"
@@ -322,25 +293,6 @@ const Settings: React.FC = () => {
                 disabled={!nasConfig.enabled}
               />
 
-              <TextField
-                fullWidth
-                label="Username"
-                value={nasConfig.username}
-                onChange={(e) => setNasConfig(prev => ({ ...prev, username: e.target.value }))}
-                margin="normal"
-                disabled={!nasConfig.enabled}
-              />
-
-              <TextField
-                fullWidth
-                label="Password"
-                type="password"
-                value={nasConfig.password}
-                onChange={(e) => setNasConfig(prev => ({ ...prev, password: e.target.value }))}
-                margin="normal"
-                disabled={!nasConfig.enabled}
-              />
-
               <FormControlLabel
                 control={
                   <Switch
@@ -349,19 +301,17 @@ const Settings: React.FC = () => {
                     disabled={!nasConfig.enabled}
                   />
                 }
-                label="Auto-mount on startup"
+                label="Auto Mount"
               />
 
-              <Box sx={{ mt: 2 }}>
-                <Button
-                  variant="outlined"
-                  startIcon={<TestConnectionIcon />}
-                  onClick={() => handleTestConnection('nas')}
-                  disabled={!nasConfig.enabled || testing}
-                >
-                  Test Connection
-                </Button>
-              </Box>
+              <Button
+                startIcon={<TestConnectionIcon />}
+                onClick={() => handleTestConnection('nas')}
+                disabled={!nasConfig.enabled || testing}
+                sx={{ mt: 2 }}
+              >
+                Test Connection
+              </Button>
             </CardContent>
           </Card>
         </Grid>
@@ -372,7 +322,7 @@ const Settings: React.FC = () => {
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                 <Email sx={{ mr: 1 }} />
-                <Typography variant="h6">Email Integration</Typography>
+                <Typography variant="h6">Email Configuration</Typography>
                 <Chip 
                   label={emailConfig.enabled ? 'Enabled' : 'Disabled'} 
                   color={emailConfig.enabled ? 'success' : 'default'}
@@ -380,7 +330,7 @@ const Settings: React.FC = () => {
                   sx={{ ml: 'auto' }}
                 />
               </Box>
-
+              
               <FormControlLabel
                 control={
                   <Switch
@@ -391,8 +341,6 @@ const Settings: React.FC = () => {
                 label="Enable Email Processing"
               />
 
-              <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>IMAP Settings</Typography>
-              
               <TextField
                 fullWidth
                 label="IMAP Host"
@@ -431,37 +379,14 @@ const Settings: React.FC = () => {
                 disabled={!emailConfig.enabled}
               />
 
-              <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>SMTP Settings</Typography>
-              
-              <TextField
-                fullWidth
-                label="SMTP Host"
-                value={emailConfig.smtpHost}
-                onChange={(e) => setEmailConfig(prev => ({ ...prev, smtpHost: e.target.value }))}
-                margin="normal"
-                disabled={!emailConfig.enabled}
-              />
-
-              <TextField
-                fullWidth
-                label="SMTP Port"
-                type="number"
-                value={emailConfig.smtpPort}
-                onChange={(e) => setEmailConfig(prev => ({ ...prev, smtpPort: parseInt(e.target.value) }))}
-                margin="normal"
-                disabled={!emailConfig.enabled}
-              />
-
-              <Box sx={{ mt: 2 }}>
-                <Button
-                  variant="outlined"
-                  startIcon={<TestConnectionIcon />}
-                  onClick={() => handleTestConnection('email')}
-                  disabled={!emailConfig.enabled || testing}
-                >
-                  Test Connection
-                </Button>
-              </Box>
+              <Button
+                startIcon={<TestConnectionIcon />}
+                onClick={() => handleTestConnection('email')}
+                disabled={!emailConfig.enabled || testing}
+                sx={{ mt: 2 }}
+              >
+                Test Connection
+              </Button>
             </CardContent>
           </Card>
         </Grid>
@@ -470,10 +395,9 @@ const Settings: React.FC = () => {
         <Grid item xs={12} md={6}>
           <Card>
             <CardContent>
-                             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                 <SettingsIcon sx={{ mr: 1 }} />
-                 <Typography variant="h6">System Configuration</Typography>
-               </Box>
+              <Typography variant="h6" gutterBottom>
+                System Configuration
+              </Typography>
 
               <TextField
                 fullWidth
@@ -494,7 +418,6 @@ const Settings: React.FC = () => {
                 value={systemConfig.processingWorkers}
                 onChange={(e) => setSystemConfig(prev => ({ ...prev, processingWorkers: parseInt(e.target.value) }))}
                 margin="normal"
-                inputProps={{ min: 1, max: 16 }}
               />
 
               <TextField
@@ -504,7 +427,6 @@ const Settings: React.FC = () => {
                 value={systemConfig.batchSize}
                 onChange={(e) => setSystemConfig(prev => ({ ...prev, batchSize: parseInt(e.target.value) }))}
                 margin="normal"
-                inputProps={{ min: 1, max: 100 }}
               />
 
               <TextField
@@ -514,9 +436,6 @@ const Settings: React.FC = () => {
                 value={systemConfig.backupRetention}
                 onChange={(e) => setSystemConfig(prev => ({ ...prev, backupRetention: parseInt(e.target.value) }))}
                 margin="normal"
-                InputProps={{
-                  endAdornment: <InputAdornment position="end">days</InputAdornment>,
-                }}
               />
 
               <FormControlLabel
@@ -526,7 +445,7 @@ const Settings: React.FC = () => {
                     onChange={(e) => setSystemConfig(prev => ({ ...prev, enableCompression: e.target.checked }))}
                   />
                 }
-                label="Enable File Compression"
+                label="Enable Compression"
               />
 
               <FormControlLabel
@@ -536,7 +455,7 @@ const Settings: React.FC = () => {
                     onChange={(e) => setSystemConfig(prev => ({ ...prev, enableEncryption: e.target.checked }))}
                   />
                 }
-                label="Enable File Encryption"
+                label="Enable Encryption"
               />
             </CardContent>
           </Card>
@@ -544,14 +463,7 @@ const Settings: React.FC = () => {
       </Grid>
 
       {/* Action Buttons */}
-      <Box sx={{ mt: 3, display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
-        <Button
-          variant="outlined"
-          startIcon={<Refresh />}
-          onClick={() => window.location.reload()}
-        >
-          Reset
-        </Button>
+      <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
         <Button
           variant="contained"
           startIcon={<Save />}
@@ -559,6 +471,14 @@ const Settings: React.FC = () => {
           disabled={saving}
         >
           {saving ? 'Saving...' : 'Save Settings'}
+        </Button>
+        
+        <Button
+          variant="outlined"
+          startIcon={<Refresh />}
+          onClick={() => window.location.reload()}
+        >
+          Reset to Defaults
         </Button>
       </Box>
     </Box>

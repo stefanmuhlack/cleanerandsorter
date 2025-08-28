@@ -37,10 +37,10 @@ import {
   CheckCircle,
   Error,
   Info,
-  Settings,
   Timeline,
   Storage,
-  Psychology
+  Psychology,
+  Settings as SettingsIcon
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
@@ -152,7 +152,7 @@ const FileProcessing: React.FC = () => {
       <Card sx={{ mb: 3 }}>
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            <Settings sx={{ mr: 1, verticalAlign: 'middle' }} />
+            <SettingsIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
             Processing Configuration
           </Typography>
           <Grid container spacing={2}>

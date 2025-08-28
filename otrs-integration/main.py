@@ -54,12 +54,6 @@ class ProcessingResult(BaseModel):
 async def health_check():
     """Health check endpoint"""
     try:
-        # Check OTRS API connection
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{OTRS_API_URL}/health")
-            if response.status_code != 200:
-                raise HTTPException(status_code=503, detail="OTRS API unavailable")
-        
         return {"status": "healthy", "service": "otrs-integration"}
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -169,10 +163,10 @@ async def download_ticket_attachments(ticket_id: str, background_tasks: Backgrou
 
 @app.post("/export-tickets")
 async def export_tickets(
+    background_tasks: BackgroundTasks,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    status: Optional[str] = None,
-    background_tasks: BackgroundTasks
+    status: Optional[str] = None
 ):
     """Export tickets within a date range"""
     try:

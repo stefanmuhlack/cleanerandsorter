@@ -246,8 +246,7 @@ services:
       - ./models:/app/models
       - ./config/llm-config.yaml:/app/config/llm-config.yaml
     depends_on:
-      ollama:
-        condition: service_healthy
+      - ollama
     restart: unless-stopped
 
   # Email Processing Service
@@ -256,6 +255,8 @@ services:
       context: ./email-processor
       dockerfile: Dockerfile
     container_name: cas_email_processor
+    ports:
+      - "8002:8000"
     environment:
       - PAPERLESS_URL=http://paperless:8000
       - RABBITMQ_URL=amqp://cas_user:cas_password@rabbitmq:5672/
@@ -275,6 +276,8 @@ services:
       context: ./otrs-integration
       dockerfile: Dockerfile
     container_name: cas_otrs_integration
+    ports:
+      - "8003:8000"
     environment:
       - OTRS_API_URL=http://otrs.company.com/api
       - OTRS_API_KEY=${OTRS_API_KEY}
@@ -292,6 +295,8 @@ services:
       context: ./backup-service
       dockerfile: Dockerfile
     container_name: cas_backup_service
+    ports:
+      - "8004:8000"
     environment:
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin

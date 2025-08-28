@@ -66,12 +66,6 @@ class ProcessingResult(BaseModel):
 async def health_check():
     """Health check endpoint"""
     try:
-        # Check Paperless connection
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{PAPERLESS_URL}/health/")
-            if response.status_code != 200:
-                raise HTTPException(status_code=503, detail="Paperless service unavailable")
-        
         return {"status": "healthy", "service": "email-processor"}
     except Exception as e:
         logger.error(f"Health check failed: {e}")

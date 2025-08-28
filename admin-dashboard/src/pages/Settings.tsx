@@ -23,7 +23,7 @@ import {
   Email,
   Save,
   Refresh,
-  WifiTethering as TestConnection
+  WifiTethering as TestConnectionIcon
 } from '@mui/icons-material';
 
 interface LLMConfig {
@@ -259,7 +259,7 @@ const Settings: React.FC = () => {
               <Box sx={{ mt: 2 }}>
                 <Button
                   variant="outlined"
-                  startIcon={<TestConnection />}
+                  startIcon={<TestConnectionIcon />}
                   onClick={() => handleTestConnection('llm')}
                   disabled={!llmConfig.enabled || testing}
                 >
@@ -355,7 +355,7 @@ const Settings: React.FC = () => {
               <Box sx={{ mt: 2 }}>
                 <Button
                   variant="outlined"
-                  startIcon={<TestConnection />}
+                  startIcon={<TestConnectionIcon />}
                   onClick={() => handleTestConnection('nas')}
                   disabled={!nasConfig.enabled || testing}
                 >
@@ -455,7 +455,7 @@ const Settings: React.FC = () => {
               <Box sx={{ mt: 2 }}>
                 <Button
                   variant="outlined"
-                  startIcon={<TestConnection />}
+                  startIcon={<TestConnectionIcon />}
                   onClick={() => handleTestConnection('email')}
                   disabled={!emailConfig.enabled || testing}
                 >

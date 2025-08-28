@@ -53,30 +53,7 @@ import {
   fetchProcessingStats
 } from '../store/slices/fileProcessingSlice';
 
-interface ProcessingJob {
-  id: string;
-  name: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  files: string[];
-  processedFiles: string[];
-  failedFiles: string[];
-  duplicates: string[];
-  createdAt: string;
-  startedAt?: string;
-  completedAt?: string;
-  progress: number;
-}
 
-interface ProcessingStats {
-  totalFiles: number;
-  processedFiles: number;
-  failedFiles: number;
-  duplicateFiles: number;
-  totalSize: number;
-  averageProcessingTime: number;
-  llmClassifications: number;
-  rollbacks: number;
-}
 
 const FileProcessing: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -126,15 +103,12 @@ const FileProcessing: React.FC = () => {
       formData.append('files', file);
     });
     
-    await dispatch(uploadFiles(formData));
+    await dispatch(uploadFiles(selectedFiles));
     setSelectedFiles([]);
   };
 
   const handleProcess = async () => {
-    await dispatch(processFiles({
-      config: processingConfig,
-      files: selectedFiles.map(f => f.name)
-    }));
+    await dispatch(processFiles(processingConfig));
   };
 
   const handleRollback = async (jobId: string) => {
@@ -288,23 +262,12 @@ const FileProcessing: React.FC = () => {
                 Duplicates Found
               </Typography>
               <Typography variant="h4" color="warning.main">
-                {stats?.duplicateFiles || 0}
+                {stats?.duplicatesFound || 0}
               </Typography>
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} md={3}>
-          <Card>
-            <CardContent>
-              <Typography color="textSecondary" gutterBottom>
-                LLM Classifications
-              </Typography>
-              <Typography variant="h4" color="info.main">
-                {stats?.llmClassifications || 0}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
+
       </Grid>
 
       {/* File Upload Area */}
@@ -435,11 +398,11 @@ const FileProcessing: React.FC = () => {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2">
-                        {job.processedFiles.length} / {job.files.length}
+                        {job.filename}
                       </Typography>
-                      {job.duplicates.length > 0 && (
+                      {job.isDuplicate && (
                         <Typography variant="caption" color="warning.main">
-                          {job.duplicates.length} duplicates
+                          Duplicate detected
                         </Typography>
                       )}
                     </TableCell>
@@ -458,7 +421,7 @@ const FileProcessing: React.FC = () => {
                       </Box>
                     </TableCell>
                     <TableCell>
-                      {new Date(job.createdAt).toLocaleString()}
+                      {new Date(job.startTime).toLocaleString()}
                     </TableCell>
                     <TableCell>
                       <Box sx={{ display: 'flex', gap: 1 }}>
@@ -466,7 +429,7 @@ const FileProcessing: React.FC = () => {
                           <Tooltip title="Stop Processing">
                             <IconButton
                               size="small"
-                              onClick={() => dispatch(stopProcessing(job.id))}
+                              onClick={() => dispatch(stopProcessing())}
                             >
                               <Stop />
                             </IconButton>

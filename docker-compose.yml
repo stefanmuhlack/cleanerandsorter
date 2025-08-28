@@ -338,6 +338,29 @@ services:
       - llm-manager
     restart: unless-stopped
 
+  # Footage and Media Management Service
+  footage-service:
+    build:
+      context: ./footage-service
+      dockerfile: Dockerfile
+    container_name: cas_footage_service
+    ports:
+      - "8006:8000"
+    environment:
+      - FOOTAGE_PATH=/mnt/nas/footage
+      - THUMBNAILS_PATH=/mnt/nas/thumbnails
+      - TEMP_PATH=/tmp/footage
+      - FOOTAGE_MAX_SIZE=1073741824
+      - FOOTAGE_ENABLE_LLM=true
+      - OLLAMA_URL=http://ollama:11434
+    volumes:
+      - ./config:/app/config:ro
+      - nas-share:/mnt/nas
+      - footage_temp:/tmp/footage
+    depends_on:
+      - llm-manager
+    restart: unless-stopped
+
   # Monitoring Stack
   prometheus:
     image: prom/prometheus:latest
@@ -383,6 +406,7 @@ volumes:
   email_attachments:
   otrs_attachments:
   nas-share:
+  footage_temp:
 
 networks:
   default:

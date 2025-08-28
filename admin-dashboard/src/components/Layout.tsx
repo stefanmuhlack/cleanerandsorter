@@ -29,6 +29,7 @@ import {
   Analytics as AnalyticsIcon,
   Settings as SettingsIcon,
   Email as EmailIcon,
+  VideoLibrary as VideoIcon,
   Notifications as NotificationsIcon,
   AccountCircle as AccountCircleIcon,
   Search as SearchIcon,
@@ -61,6 +62,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { text: 'Sortierregeln', icon: <RuleIcon />, path: '/sorting-rules' },
     { text: 'Statistiken', icon: <AnalyticsIcon />, path: '/statistics' },
     { text: 'E-Mail Integration', icon: <EmailIcon />, path: '/email-integration' },
+    { text: 'Footage Management', icon: <VideoIcon />, path: '/footage-management' },
     { text: 'Einstellungen', icon: <SettingsIcon />, path: '/settings' },
   ];
 

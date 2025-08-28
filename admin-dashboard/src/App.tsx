@@ -13,6 +13,7 @@ import SortingRules from './pages/SortingRules';
 import Statistics from './pages/Statistics';
 import Settings from './pages/Settings';
 import EmailIntegration from './pages/EmailIntegration';
+import FootageManagement from './pages/FootageManagement';
 
 const theme = createTheme({
   palette: {
@@ -60,6 +61,7 @@ function App() {
               <Route path="/sorting-rules" element={<SortingRules />} />
               <Route path="/statistics" element={<Statistics />} />
               <Route path="/email-integration" element={<EmailIntegration />} />
+              <Route path="/footage-management" element={<FootageManagement />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </Layout>

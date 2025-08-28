@@ -1,0 +1,193 @@
+# Footage and Media Management Configuration
+# Comprehensive configuration for creative file management
+
+# Folder Structure Configuration
+folder_structure:
+  base_path: "/mnt/nas/footage"
+  thumbnails_path: "/mnt/nas/thumbnails"
+  temp_path: "/tmp/footage"
+  
+  # Customer/Project structure
+  structure:
+    - customer
+    - project
+    - category
+    - year
+    - month
+  
+  # Default folders for new customers
+  default_folders:
+    - "raw"
+    - "processed"
+    - "final"
+    - "backup"
+
+# File Type Configuration
+file_types:
+  images:
+    extensions: ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp", "svg"]
+    max_size: 10737418240  # 10GB
+    thumbnail_generation: true
+    metadata_extraction: true
+    
+  videos:
+    extensions: ["mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "m4v"]
+    max_size: 107374182400  # 100GB
+    thumbnail_generation: true
+    metadata_extraction: true
+    
+  designs:
+    extensions: ["psd", "ai", "eps", "svg", "pdf", "indd", "sketch", "fig"]
+    max_size: 10737418240  # 10GB
+    thumbnail_generation: false
+    metadata_extraction: true
+    
+  documents:
+    extensions: ["doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf"]
+    max_size: 1073741824  # 1GB
+    thumbnail_generation: false
+    metadata_extraction: true
+
+# Processing Configuration
+processing:
+  # Thumbnail generation
+  thumbnails:
+    default_size: [300, 300]
+    quality: 85
+    format: "JPEG"
+    generate_for: ["images", "videos"]
+    
+  # Metadata extraction
+  metadata:
+    extract_exif: true
+    extract_video_info: true
+    extract_design_info: true
+    extract_document_info: true
+    
+  # Classification
+  classification:
+    enable_llm: true
+    auto_tag: true
+    confidence_threshold: 0.7
+    
+  # Duplicate detection
+  duplicates:
+    enable_detection: true
+    hash_algorithm: "sha256"
+    check_filename: true
+    check_content: true
+
+# Organization Rules
+organization:
+  # Automatic categorization
+  categories:
+    - name: "raw_footage"
+      keywords: ["raw", "original", "source", "master"]
+      file_types: ["images", "videos"]
+      
+    - name: "processed_footage"
+      keywords: ["processed", "edited", "final", "delivery"]
+      file_types: ["images", "videos"]
+      
+    - name: "design_assets"
+      keywords: ["design", "graphic", "logo", "brand"]
+      file_types: ["designs", "images"]
+      
+    - name: "marketing_materials"
+      keywords: ["marketing", "campaign", "advertisement", "promo"]
+      file_types: ["images", "videos", "designs"]
+      
+    - name: "documentation"
+      keywords: ["document", "report", "manual", "guide"]
+      file_types: ["documents"]
+  
+  # Tagging rules
+  auto_tags:
+    - pattern: "logo"
+      tags: ["branding", "logo"]
+      
+    - pattern: "banner"
+      tags: ["marketing", "banner"]
+      
+    - pattern: "video"
+      tags: ["video", "media"]
+      
+    - pattern: "photo"
+      tags: ["photography", "image"]
+      
+    - pattern: "design"
+      tags: ["design", "creative"]
+
+# Storage Configuration
+storage:
+  # NAS integration
+  nas:
+    mount_point: "/mnt/nas"
+    auto_mount: true
+    backup_enabled: true
+    
+  # Compression settings
+  compression:
+    enable_compression: false
+    compress_after_days: 30
+    compression_ratio: 0.8
+    
+  # Retention policy
+  retention:
+    keep_original: true
+    delete_after_days: 2555  # 7 years
+    archive_after_days: 365  # 1 year
+
+# Security Configuration
+security:
+  # Access control
+  access:
+    require_authentication: true
+    allowed_roles: ["admin", "editor", "viewer"]
+    
+  # File permissions
+  permissions:
+    owner: "cas_user"
+    group: "cas_group"
+    mode: "0644"
+    
+  # Encryption
+  encryption:
+    enable_encryption: false
+    algorithm: "AES-256"
+
+# Monitoring Configuration
+monitoring:
+  # Health checks
+  health_checks:
+    enabled: true
+    interval: 300  # 5 minutes
+    
+  # Metrics collection
+  metrics:
+    enabled: true
+    collect_file_stats: true
+    collect_processing_stats: true
+    
+  # Logging
+  logging:
+    level: "INFO"
+    file_rotation: "1 day"
+    retention: "30 days"
+
+# Integration Configuration
+integrations:
+  # Ingest service integration
+  ingest_service:
+    url: "http://cas-ingest-service:8000"
+    enabled: true
+    
+  # LLM service integration
+  llm_service:
+    url: "http://cas-llm-manager:8001"
+    enabled: true
+    
+  # Admin dashboard integration
+  admin_dashboard:
+    url: "http://cas-admin-dashboard:3000"
+    enabled: true 

@@ -1,0 +1,398 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "CAS Document Management System - Monitoring Dashboard",
+    "tags": ["cas", "dms", "monitoring"],
+    "style": "dark",
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "System Overview",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "up{job=\"ingest-service\"}",
+            "legendFormat": "Ingest Service"
+          },
+          {
+            "expr": "up{job=\"llm-manager\"}",
+            "legendFormat": "LLM Manager"
+          },
+          {
+            "expr": "up{job=\"email-processor\"}",
+            "legendFormat": "Email Processor"
+          },
+          {
+            "expr": "up{job=\"otrs-integration\"}",
+            "legendFormat": "OTRS Integration"
+          },
+          {
+            "expr": "up{job=\"backup-service\"}",
+            "legendFormat": "Backup Service"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "green", "value": 1}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Document Processing Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(documents_processed_total[5m])",
+            "legendFormat": "Documents/min"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Documents per minute",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Processing Queue Size",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "processing_queue_size",
+            "legendFormat": "Queue Size"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Jobs in queue",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "Processing Errors",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(processing_errors_total[5m])",
+            "legendFormat": "Errors/min"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Errors per minute",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "LLM Classification Performance",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(llm_classification_duration_seconds_sum[5m]) / rate(llm_classification_duration_seconds_count[5m])",
+            "legendFormat": "Avg Response Time"
+          },
+          {
+            "expr": "rate(llm_classification_requests_total[5m])",
+            "legendFormat": "Requests/min"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Seconds / Requests per minute",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 6,
+        "title": "Duplicate Detection",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "duplicates_detected_total",
+            "legendFormat": "Duplicates Detected"
+          },
+          {
+            "expr": "rate(duplicates_detected_total[5m])",
+            "legendFormat": "Duplicates/min"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": 0},
+                {"color": "yellow", "value": 10},
+                {"color": "red", "value": 50}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 7,
+        "title": "Email Processing",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(emails_processed_total[5m])",
+            "legendFormat": "Emails/min"
+          },
+          {
+            "expr": "rate(email_attachments_processed_total[5m])",
+            "legendFormat": "Attachments/min"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Count per minute",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
+      },
+      {
+        "id": 8,
+        "title": "OTRS Integration",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(otrs_tickets_exported_total[5m])",
+            "legendFormat": "Tickets/min"
+          },
+          {
+            "expr": "rate(otrs_attachments_processed_total[5m])",
+            "legendFormat": "Attachments/min"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Count per minute",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
+      },
+      {
+        "id": 9,
+        "title": "Backup Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "backup_last_success_timestamp",
+            "legendFormat": "Last Successful Backup"
+          },
+          {
+            "expr": "backup_size_bytes",
+            "legendFormat": "Backup Size"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "green", "value": 1}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32}
+      },
+      {
+        "id": 10,
+        "title": "Storage Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "minio_bucket_size_bytes",
+            "legendFormat": "MinIO Storage"
+          },
+          {
+            "expr": "postgres_database_size_bytes",
+            "legendFormat": "PostgreSQL Size"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Bytes",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32}
+      },
+      {
+        "id": 11,
+        "title": "System Resources",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(process_cpu_seconds_total[5m]) * 100",
+            "legendFormat": "CPU Usage %"
+          },
+          {
+            "expr": "process_resident_memory_bytes / 1024 / 1024",
+            "legendFormat": "Memory Usage MB"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "CPU % / Memory MB",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40}
+      },
+      {
+        "id": 12,
+        "title": "Rollback Operations",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rollback_operations_total",
+            "legendFormat": "Total Rollbacks"
+          },
+          {
+            "expr": "rate(rollback_operations_total[5m])",
+            "legendFormat": "Rollbacks/min"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": 0},
+                {"color": "yellow", "value": 1},
+                {"color": "red", "value": 5}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40}
+      },
+      {
+        "id": 13,
+        "title": "Document Classification Accuracy",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(classification_correct_total[5m]) / (rate(classification_correct_total[5m]) + rate(classification_incorrect_total[5m])) * 100",
+            "legendFormat": "Accuracy %"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Accuracy %",
+            "min": 0,
+            "max": 100
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 48}
+      },
+      {
+        "id": 14,
+        "title": "Processing Job Status",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "processing_jobs_status",
+            "legendFormat": "{{status}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 48}
+      },
+      {
+        "id": 15,
+        "title": "Recent Alerts",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "alerts",
+            "format": "table"
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {
+                "Time": true,
+                "__name__": true,
+                "job": true,
+                "instance": true
+              },
+              "indexByName": {},
+              "renameByName": {
+                "alertname": "Alert",
+                "severity": "Severity",
+                "description": "Description"
+              }
+            }
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 56}
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "30s",
+    "schemaVersion": 27,
+    "version": 1,
+    "links": [],
+    "annotations": {
+      "list": []
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "service",
+          "type": "query",
+          "query": "label_values(up, job)",
+          "refresh": 2,
+          "includeAll": true,
+          "multi": true
+        },
+        {
+          "name": "instance",
+          "type": "query",
+          "query": "label_values(up{job=~\"$service\"}, instance)",
+          "refresh": 2,
+          "includeAll": true,
+          "multi": true
+        }
+      ]
+    }
+  }
+} 

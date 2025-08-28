@@ -1,0 +1,179 @@
+# OTRS Configuration for CAS Document Management System
+# Version: 1.0.0
+
+# OTRS API settings
+api:
+  url: "http://otrs.company.com/api"
+  key: "${OTRS_API_KEY}"
+  timeout: 30
+  retry_attempts: 3
+  retry_delay: 5
+
+# Ticket processing settings
+ticket_processing:
+  # Ticket statuses to process
+  statuses:
+    - "new"
+    - "open"
+    - "pending"
+    - "resolved"
+    - "closed"
+  
+  # Priority levels to process
+  priorities:
+    - "very low"
+    - "low"
+    - "normal"
+    - "high"
+    - "very high"
+  
+  # Maximum tickets to process per batch
+  batch_size: 50
+  
+  # Date range for exports (days)
+  export_range_days: 30
+  
+  # Include closed tickets in exports
+  include_closed: true
+
+# Attachment processing
+attachments:
+  # Maximum attachment size (bytes)
+  max_size: 10485760  # 10MB
+  
+  # Allowed file types
+  allowed_types:
+    - "pdf"
+    - "doc"
+    - "docx"
+    - "xls"
+    - "xlsx"
+    - "jpg"
+    - "jpeg"
+    - "png"
+    - "txt"
+    - "zip"
+    - "rar"
+  
+  # Processing rules for different attachment types
+  processing_rules:
+    - condition: "filename_contains:rechnung"
+      action: "classify_as_invoice"
+      target_path: "/finanzen/rechnungen/{year}"
+      tags: ["rechnung", "otrs"]
+    
+    - condition: "filename_contains:vertrag"
+      action: "classify_as_contract"
+      target_path: "/finanzen/vertraege/{year}"
+      tags: ["vertrag", "otrs"]
+    
+    - condition: "filename_contains:projekt"
+      action: "classify_as_project"
+      target_path: "/projekte/{customer}/{project}"
+      tags: ["projekt", "otrs"]
+    
+    - condition: "file_type:pdf"
+      action: "process_with_ocr"
+      target_path: "/documents/otrs/{year}"
+      tags: ["dokument", "otrs"]
+
+# Customer mapping
+customer_mapping:
+  # Map OTRS customer names to internal customer codes
+  mappings:
+    "WWE Media GmbH": "wwe-media"
+    "Client A": "client-a"
+    "Client B": "client-b"
+    "Internal": "internal"
+  
+  # Default customer for unknown customers
+  default_customer: "unknown"
+
+# Export settings
+export:
+  # Export format
+  format: "json"
+  
+  # Include ticket metadata
+  include_metadata: true
+  
+  # Include ticket history
+  include_history: false
+  
+  # Include ticket comments
+  include_comments: true
+  
+  # Export directory
+  export_dir: "/app/attachments/exports"
+  
+  # Retention period for exports (days)
+  retention_days: 90
+
+# Notification settings
+notifications:
+  # Email notifications
+  email:
+    enabled: true
+    recipients: ["admin@company.com"]
+    subject_prefix: "[OTRS Export]"
+  
+  # Slack notifications
+  slack:
+    enabled: false
+    webhook_url: ""
+    channel: "#otrs-exports"
+  
+  # Notification triggers
+  triggers:
+    - event: "export_completed"
+      enabled: true
+    - event: "export_failed"
+      enabled: true
+    - event: "large_export"
+      enabled: true
+      threshold: 100  # tickets
+
+# Error handling
+error_handling:
+  # Maximum retries for failed operations
+  max_retries: 3
+  
+  # Retry delay (seconds)
+  retry_delay: 60
+  
+  # Log failed operations
+  log_failures: true
+  
+  # Alert on critical failures
+  alert_on_failure: true
+  
+  # Quarantine failed tickets
+  quarantine_failed: false
+
+# Performance settings
+performance:
+  # Maximum concurrent API requests
+  max_concurrent_requests: 5
+  
+  # Request timeout (seconds)
+  request_timeout: 30
+  
+  # Connection pool size
+  connection_pool_size: 10
+  
+  # Rate limiting (requests per minute)
+  rate_limit: 60
+
+# Monitoring
+monitoring:
+  # Enable metrics collection
+  metrics_enabled: true
+  
+  # Metrics endpoint
+  metrics_endpoint: "/metrics"
+  
+  # Health check interval (seconds)
+  health_check_interval: 300
+  
+  # Log performance metrics
+  log_performance: true 

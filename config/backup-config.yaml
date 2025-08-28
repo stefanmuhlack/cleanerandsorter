@@ -1,0 +1,201 @@
+# Backup Service Configuration
+backup:
+  # Retention settings
+  retention:
+    database_backups: 30  # days
+    minio_backups: 60     # days
+    full_backups: 90      # days
+    log_files: 7          # days
+  
+  # Schedule settings
+  schedule:
+    database:
+      enabled: true
+      frequency: "daily"
+      time: "02:00"
+      timezone: "Europe/Berlin"
+    
+    minio:
+      enabled: true
+      frequency: "weekly"
+      day: "sunday"
+      time: "03:00"
+      timezone: "Europe/Berlin"
+    
+    full:
+      enabled: true
+      frequency: "monthly"
+      day: "first_sunday"
+      time: "04:00"
+      timezone: "Europe/Berlin"
+    
+    cleanup:
+      enabled: true
+      frequency: "daily"
+      time: "05:00"
+      timezone: "Europe/Berlin"
+  
+  # Storage settings
+  storage:
+    backup_directory: "/app/backups"
+    temp_directory: "/tmp/backups"
+    compression:
+      enabled: true
+      algorithm: "gzip"
+      level: 6
+    
+    # MinIO backup settings
+    minio:
+      bucket: "backups"
+      prefix: "system-backups"
+      encryption: false
+      versioning: true
+    
+    # Database backup settings
+    database:
+      format: "custom"  # custom, plain, directory
+      compression: true
+      include_schema: true
+      include_data: true
+      include_indexes: true
+      include_triggers: true
+      include_rls: true
+      include_sequences: true
+      include_foreign_keys: true
+  
+  # Notification settings
+  notifications:
+    enabled: true
+    email:
+      smtp_server: "smtp.company.com"
+      smtp_port: 587
+      username: "backup@company.com"
+      password: "${SMTP_PASSWORD}"
+      from_address: "backup@company.com"
+      to_addresses:
+        - "admin@company.com"
+        - "devops@company.com"
+    
+    webhook:
+      enabled: false
+      url: "https://webhook.company.com/backup"
+      method: "POST"
+      headers:
+        Authorization: "Bearer ${WEBHOOK_TOKEN}"
+  
+  # Monitoring settings
+  monitoring:
+    metrics:
+      enabled: true
+      prometheus_endpoint: "/metrics"
+    
+    health_checks:
+      enabled: true
+      check_interval: 300  # seconds
+      timeout: 30          # seconds
+    
+    alerts:
+      enabled: true
+      backup_failure_threshold: 3
+      restore_failure_threshold: 1
+      disk_space_threshold: 10  # percent
+  
+  # Performance settings
+  performance:
+    max_concurrent_backups: 2
+    max_backup_size: "10GB"
+    timeout:
+      database_backup: 3600    # seconds
+      minio_backup: 7200       # seconds
+      full_backup: 14400       # seconds
+      restore: 7200            # seconds
+    
+    resource_limits:
+      cpu_percent: 50
+      memory_mb: 1024
+      disk_io_mbps: 100
+  
+  # Security settings
+  security:
+    encryption:
+      enabled: false
+      algorithm: "AES-256-GCM"
+      key_file: "/app/secrets/backup.key"
+    
+    authentication:
+      enabled: true
+      api_key: "${BACKUP_API_KEY}"
+      jwt_secret: "${BACKUP_JWT_SECRET}"
+    
+    access_control:
+      allowed_ips:
+        - "10.0.0.0/8"
+        - "192.168.0.0/16"
+        - "172.16.0.0/12"
+  
+  # Logging settings
+  logging:
+    level: "INFO"
+    format: "json"
+    file: "/app/logs/backup-service.log"
+    max_size: "100MB"
+    backup_count: 5
+    
+    # Structured logging fields
+    fields:
+      service: "backup-service"
+      version: "1.0.0"
+      environment: "production"
+  
+  # Error handling
+  error_handling:
+    retry:
+      enabled: true
+      max_attempts: 3
+      backoff_factor: 2
+      initial_delay: 60  # seconds
+    
+    fallback:
+      enabled: true
+      local_storage: true
+      cloud_storage: false
+    
+    rollback:
+      enabled: true
+      automatic: false
+      manual_only: true
+  
+  # Integration settings
+  integrations:
+    # Grafana integration
+    grafana:
+      enabled: true
+      url: "http://grafana:3000"
+      api_key: "${GRAFANA_API_KEY}"
+      dashboard_uid: "backup-metrics"
+    
+    # Prometheus integration
+    prometheus:
+      enabled: true
+      url: "http://prometheus:9090"
+      job_name: "backup-service"
+    
+    # Elasticsearch integration
+    elasticsearch:
+      enabled: false
+      url: "http://elasticsearch:9200"
+      index_prefix: "backup-logs"
+  
+  # Backup verification
+  verification:
+    enabled: true
+    integrity_check: true
+    restore_test: false  # Only for staging environments
+    checksum_verification: true
+    
+    # Test restore settings
+    test_restore:
+      enabled: false
+      frequency: "weekly"
+      max_age: 7  # days
+      timeout: 3600  # seconds 

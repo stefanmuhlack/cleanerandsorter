@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Card,
@@ -9,31 +9,18 @@ import {
   TextField,
   Switch,
   FormControlLabel,
-  Divider,
   Alert,
   Chip,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
   Slider,
   InputAdornment,
-  IconButton,
-  Tooltip
+  Select,
+  MenuItem
 } from '@mui/material';
 import {
   Settings as SettingsIcon,
-  ExpandMore,
   Psychology,
   Storage,
-  NetworkCheck,
-  Security,
-  Backup,
   Email,
-  CloudUpload,
   Save,
   Refresh,
   WifiTethering as TestConnection

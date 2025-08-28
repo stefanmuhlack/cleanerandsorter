@@ -3,44 +3,93 @@ global:
   evaluation_interval: 15s
 
 rule_files:
-  # - "first_rules.yml"
-  # - "second_rules.yml"
+  - "alert_rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
 
 scrape_configs:
-  # Prometheus itself
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
 
-  # Ingest Service
   - job_name: 'ingest-service'
     static_configs:
-      - targets: ['cas-ingest-service:8000']
+      - targets: ['ingest-service:8000']
     metrics_path: '/metrics'
-    scrape_interval: 10s
+    scrape_interval: 30s
 
-  # PostgreSQL (if using postgres_exporter)
-  - job_name: 'postgres'
+  - job_name: 'llm-manager'
     static_configs:
-      - targets: ['postgres:5432']
+      - targets: ['llm-manager:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
 
-  # MinIO (if using minio_exporter)
+  - job_name: 'email-processor'
+    static_configs:
+      - targets: ['email-processor:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'otrs-integration'
+    static_configs:
+      - targets: ['otrs-integration:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'backup-service'
+    static_configs:
+      - targets: ['backup-service:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'paperless'
+    static_configs:
+      - targets: ['paperless:8010']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
   - job_name: 'minio'
     static_configs:
       - targets: ['minio:9000']
+    metrics_path: '/minio/v2/metrics/cluster'
+    scrape_interval: 30s
 
-  # RabbitMQ (if using rabbitmq_exporter)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
   - job_name: 'rabbitmq'
     static_configs:
-      - targets: ['rabbitmq:15672']
+      - targets: ['rabbitmq:15692']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
 
-  # Elasticsearch
   - job_name: 'elasticsearch'
     static_configs:
       - targets: ['elasticsearch:9200']
     metrics_path: '/_prometheus/metrics'
+    scrape_interval: 30s
 
-  # Node Exporter (for system metrics)
-  - job_name: 'node-exporter'
+  - job_name: 'redis'
     static_configs:
-      - targets: ['node-exporter:9100'] 
+      - targets: ['redis:6379']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'ollama'
+    static_configs:
+      - targets: ['ollama:11434']
+    metrics_path: '/api/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'admin-dashboard'
+    static_configs:
+      - targets: ['admin-dashboard:3001']
+    metrics_path: '/metrics'
+    scrape_interval: 30s 

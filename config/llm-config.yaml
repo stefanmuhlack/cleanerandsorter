@@ -1,0 +1,136 @@
+# LLM Configuration for CAS Document Management System
+# Version: 1.0.0
+
+# Default model settings
+default_model: "mistral-7b"
+default_temperature: 0.1
+default_max_tokens: 100
+
+# Available models for classification
+models:
+  - name: "mistral-7b"
+    description: "Mistral 7B - Fast and efficient for document classification"
+    size_gb: 4.1
+    recommended: true
+    tags: ["classification", "general"]
+  
+  - name: "llama-3-8b"
+    description: "Llama 3 8B - Good balance of speed and accuracy"
+    size_gb: 4.7
+    recommended: false
+    tags: ["classification", "general"]
+  
+  - name: "llama-3-70b"
+    description: "Llama 3 70B - High accuracy but slower"
+    size_gb: 40.0
+    recommended: false
+    tags: ["classification", "high-accuracy"]
+  
+  - name: "codellama-7b"
+    description: "Code Llama 7B - Specialized for technical documents"
+    size_gb: 4.0
+    recommended: false
+    tags: ["classification", "technical"]
+  
+  - name: "phi-2"
+    description: "Phi-2 - Small and fast for basic classification"
+    size_gb: 2.7
+    recommended: false
+    tags: ["classification", "fast"]
+
+# Classification categories and their descriptions
+categories:
+  finanzen:
+    description: "Financial documents, invoices, contracts, accounting"
+    keywords: ["rechnung", "invoice", "bill", "zahlung", "payment", "vertrag", "contract", "finanzen", "buchhaltung"]
+    priority: 90
+  
+  projekte:
+    description: "Project documents, web design, marketing materials"
+    keywords: ["projekt", "project", "website", "webdesign", "marketing", "kampagne"]
+    priority: 80
+  
+  personal:
+    description: "HR documents, applications, employment contracts"
+    keywords: ["personal", "hr", "bewerbung", "application", "mitarbeiter", "employment"]
+    priority: 85
+  
+  footage:
+    description: "Media files, videos, photos, creative assets"
+    keywords: ["video", "footage", "foto", "photo", "bild", "media", "creative"]
+    priority: 70
+  
+  unsorted:
+    description: "Documents that don't fit other categories"
+    keywords: []
+    priority: 10
+
+# Classification prompts
+prompts:
+  default: |
+    Classify this document into one of these categories: finanzen, projekte, personal, footage, unsorted.
+    Also extract customer name and project name if mentioned.
+    
+    Document content: {content}
+    
+    Respond in JSON format:
+    {{
+        "category": "category_name",
+        "confidence": 0.95,
+        "customer": "customer_name",
+        "project": "project_name",
+        "tags": ["tag1", "tag2"]
+    }}
+  
+  financial: |
+    This is a financial document classification task. Look for:
+    - Invoices, bills, payments
+    - Contracts, agreements
+    - Financial reports, accounting documents
+    
+    Document content: {content}
+    
+    Respond in JSON format:
+    {{
+        "category": "finanzen",
+        "confidence": 0.95,
+        "customer": "customer_name",
+        "tags": ["rechnung", "vertrag", "zahlung"]
+    }}
+  
+  project: |
+    This is a project document classification task. Look for:
+    - Project plans, specifications
+    - Web design files, marketing materials
+    - Client communications
+    
+    Document content: {content}
+    
+    Respond in JSON format:
+    {{
+        "category": "projekte",
+        "confidence": 0.95,
+        "customer": "customer_name",
+        "project": "project_name",
+        "tags": ["webdesign", "marketing", "projekt"]
+    }}
+
+# Performance settings
+performance:
+  max_concurrent_requests: 5
+  request_timeout: 30
+  retry_attempts: 3
+  retry_delay: 1
+  
+# Fallback settings
+fallback:
+  enable_rule_based: true
+  confidence_threshold: 0.7
+  max_content_length: 1000
+
+# Monitoring and logging
+monitoring:
+  log_classifications: true
+  log_performance: true
+  metrics_enabled: true
+  alert_on_failure: true 

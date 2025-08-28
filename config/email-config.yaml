@@ -1,0 +1,143 @@
+# Email Configuration for CAS Document Management System
+# Version: 1.0.0
+
+# Email accounts configuration
+accounts:
+  - name: "otrs"
+    host: "mail.company.com"
+    port: 993
+    username: "otrs@company.com"
+    password: "${OTRS_EMAIL_PASSWORD}"
+    use_ssl: true
+    folders: ["INBOX", "Processed"]
+    enabled: true
+    processing_rules:
+      - condition: "sender_contains:otrs"
+        action: "classify_as_ticket"
+        target_path: "/tickets/{ticket_id}"
+      - condition: "subject_contains:rechnung"
+        action: "classify_as_invoice"
+        target_path: "/finanzen/rechnungen/{year}"
+  
+  - name: "support"
+    host: "mail.company.com"
+    port: 993
+    username: "support@company.com"
+    password: "${SUPPORT_EMAIL_PASSWORD}"
+    use_ssl: true
+    folders: ["INBOX"]
+    enabled: true
+    processing_rules:
+      - condition: "subject_contains:rechnung"
+        action: "classify_as_invoice"
+        target_path: "/finanzen/rechnungen/{year}"
+      - condition: "file_type:pdf"
+        action: "process_with_ocr"
+        target_path: "/documents/emails/{year}"
+  
+  - name: "vertrieb"
+    host: "mail.company.com"
+    port: 993
+    username: "vertrieb@company.com"
+    password: "${VERTRIEB_EMAIL_PASSWORD}"
+    use_ssl: true
+    folders: ["INBOX"]
+    enabled: true
+    processing_rules:
+      - condition: "subject_contains:projekt"
+        action: "classify_as_project"
+        target_path: "/projekte/{customer}/{project}"
+
+# Global email processing settings
+settings:
+  check_interval: 300  # Check for new emails every 5 minutes
+  max_attachment_size: 10485760  # 10MB
+  allowed_file_types:
+    - "pdf"
+    - "doc"
+    - "docx"
+    - "xls"
+    - "xlsx"
+    - "jpg"
+    - "jpeg"
+    - "png"
+    - "txt"
+  
+  # Email processing rules
+  default_actions:
+    - action: "mark_as_read"
+      enabled: true
+    - action: "move_to_processed"
+      enabled: true
+      folder: "Processed"
+    - action: "delete_after_days"
+      enabled: false
+      days: 30
+  
+  # Notification settings
+  notifications:
+    email_enabled: true
+    email_recipients: ["admin@company.com"]
+    slack_enabled: false
+    slack_webhook: ""
+    
+    # Notification triggers
+    triggers:
+      - event: "attachment_processed"
+        enabled: true
+      - event: "processing_error"
+        enabled: true
+      - event: "large_attachment"
+        enabled: true
+        threshold: 5242880  # 5MB
+
+# SMTP settings for sending notifications
+smtp:
+  host: "mail.company.com"
+  port: 587
+  username: "notifications@company.com"
+  password: "${NOTIFICATION_EMAIL_PASSWORD}"
+  use_tls: true
+  from_address: "notifications@company.com"
+
+# Processing rules for different email types
+processing_rules:
+  ticket_emails:
+    - condition: "sender_contains:otrs"
+      action: "extract_ticket_id"
+      target_path: "/tickets/{ticket_id}/attachments"
+      tags: ["ticket", "otrs"]
+  
+  invoice_emails:
+    - condition: "subject_contains:rechnung"
+      action: "classify_as_invoice"
+      target_path: "/finanzen/rechnungen/{year}"
+      tags: ["rechnung", "finanzen"]
+  
+  project_emails:
+    - condition: "subject_contains:projekt"
+      action: "extract_project_info"
+      target_path: "/projekte/{customer}/{project}"
+      tags: ["projekt", "kunde"]
+  
+  general_emails:
+    - condition: "file_type:pdf"
+      action: "process_with_ocr"
+      target_path: "/documents/emails/{year}"
+      tags: ["email", "dokument"]
+
+# Error handling
+error_handling:
+  max_retries: 3
+  retry_delay: 60  # seconds
+  quarantine_failed: true
+  quarantine_folder: "Failed"
+  log_errors: true
+  alert_on_failure: true
+
+# Performance settings
+performance:
+  max_concurrent_connections: 5
+  connection_timeout: 30
+  read_timeout: 60
+  batch_size: 10 

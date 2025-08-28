@@ -210,6 +210,101 @@ services:
     depends_on:
       - ingest-service
       - paperless
+
+  # Ollama LLM Service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: cas_ollama
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_ORIGINS=*
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./models:/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # LLM Management Service
+  llm-manager:
+    build:
+      context: ./llm-manager
+      dockerfile: Dockerfile
+    container_name: cas_llm_manager
+    ports:
+      - "8001:8000"
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./models:/app/models
+      - ./config/llm-config.yaml:/app/config/llm-config.yaml
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Email Processing Service
+  email-processor:
+    build:
+      context: ./email-processor
+      dockerfile: Dockerfile
+    container_name: cas_email_processor
+    environment:
+      - PAPERLESS_URL=http://paperless:8000
+      - RABBITMQ_URL=amqp://cas_user:cas_password@rabbitmq:5672/
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./config/email-config.yaml:/app/config/email-config.yaml
+      - email_attachments:/app/attachments
+    depends_on:
+      - paperless
+      - rabbitmq
+    restart: unless-stopped
+
+  # OTRS Integration Service
+  otrs-integration:
+    build:
+      context: ./otrs-integration
+      dockerfile: Dockerfile
+    container_name: cas_otrs_integration
+    environment:
+      - OTRS_API_URL=http://otrs.company.com/api
+      - OTRS_API_KEY=${OTRS_API_KEY}
+      - RABBITMQ_URL=amqp://cas_user:cas_password@rabbitmq:5672/
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./config/otrs-config.yaml:/app/config/otrs-config.yaml
+      - otrs_attachments:/app/attachments
+    restart: unless-stopped
+
+  # Backup Service
+  backup-service:
+    build:
+      context: ./backup-service
+      dockerfile: Dockerfile
+    container_name: cas_backup_service
+    environment:
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - POSTGRES_URL=postgresql://cas_user:cas_password@postgres:5432/cas_dms
+      - BACKUP_RETENTION_DAYS=30
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./backups:/app/backups
+      - ./config/backup-config.yaml:/app/config/backup-config.yaml
+    depends_on:
+      - minio
+      - postgres
     restart: unless-stopped
 
   # Monitoring Stack
@@ -253,6 +348,9 @@ volumes:
   prometheus_data:
   grafana_data:
   minio_config:
+  ollama_data:
+  email_attachments:
+  otrs_attachments:
 
 networks:
   default:

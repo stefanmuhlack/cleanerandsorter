@@ -312,6 +312,32 @@ services:
       - postgres
     restart: unless-stopped
 
+  # TLD and Email Management Service
+  tld-manager:
+    build:
+      context: ./tld-manager
+      dockerfile: Dockerfile
+    container_name: cas_tld_manager
+    ports:
+      - "8005:8000"
+    environment:
+      - SMTP_HOST=${SMTP_HOST:-mail.company.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - TLD_REPORTS_PATH=/mnt/nas/tld-reports
+      - TLD_DOMAINS_FILE=/app/config/domains.yaml
+      - TLD_AUTO_REPORTS=true
+      - TLD_REPORT_SCHEDULE=weekly
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@company.com}
+      - OLLAMA_URL=http://ollama:11434
+    volumes:
+      - ./config:/app/config:ro
+      - nas-share:/mnt/nas
+    depends_on:
+      - llm-manager
+    restart: unless-stopped
+
   # Monitoring Stack
   prometheus:
     image: prom/prometheus:latest

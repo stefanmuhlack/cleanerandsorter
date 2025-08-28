@@ -1,0 +1,111 @@
+# Email Consumer Configuration for Paperless-ngx
+# Multiple IMAP accounts for different departments
+
+email_accounts:
+  # OTRS Support Account
+  otrs_support:
+    name: "OTRS Support"
+    imap_server: "mail.company.com"
+    imap_port: 993
+    imap_security: "SSL"
+    username: "${OTRS_EMAIL_USER}"
+    password: "${OTRS_EMAIL_PASS}"
+    character_set: "UTF-8"
+    enabled: true
+    
+    # Processing Rules
+    rules:
+      - name: "Support Tickets"
+        filter_subject: ["support", "ticket", "help", "problem"]
+        filter_from: ["support@", "help@", "tickets@"]
+        actions:
+          - action: "tag"
+            value: "support"
+          - action: "correspondent"
+            value: "auto"
+          - action: "delete"
+            value: true
+        enabled: true
+        
+      - name: "Invoice Attachments"
+        filter_subject: ["rechnung", "invoice", "bill"]
+        filter_attachment_types: ["pdf", "doc", "docx"]
+        actions:
+          - action: "tag"
+            value: "finanzen"
+          - action: "correspondent"
+            value: "auto"
+          - action: "delete"
+            value: false
+        enabled: true
+
+  # Vertrieb Account
+  vertrieb:
+    name: "Vertrieb"
+    imap_server: "mail.company.com"
+    imap_port: 993
+    imap_security: "SSL"
+    username: "${VERTRIEB_EMAIL_USER}"
+    password: "${VERTRIEB_EMAIL_PASS}"
+    character_set: "UTF-8"
+    enabled: true
+    
+    rules:
+      - name: "Sales Documents"
+        filter_subject: ["vertrieb", "sales", "angebot", "quote"]
+        filter_attachment_types: ["pdf", "doc", "docx", "xls", "xlsx"]
+        actions:
+          - action: "tag"
+            value: "vertrieb"
+          - action: "correspondent"
+            value: "auto"
+          - action: "delete"
+            value: false
+        enabled: true
+
+  # General Support Account
+  support:
+    name: "General Support"
+    imap_server: "mail.company.com"
+    imap_port: 993
+    imap_security: "SSL"
+    username: "${SUPPORT_EMAIL_USER}"
+    password: "${SUPPORT_EMAIL_PASS}"
+    character_set: "UTF-8"
+    enabled: true
+    
+    rules:
+      - name: "General Attachments"
+        filter_attachment_types: ["pdf", "doc", "docx", "jpg", "png"]
+        actions:
+          - action: "tag"
+            value: "email-import"
+          - action: "correspondent"
+            value: "auto"
+          - action: "delete"
+            value: false
+        enabled: true
+
+# Global Settings
+settings:
+  polling_interval: 300  # 5 minutes
+  max_attachment_size: 10485760  # 10MB
+  download_attachments: true
+  delete_processed_emails: false
+  mark_as_read: true
+  create_correspondent: true
+  create_tags: true
+  
+# Processing Pipeline
+processing:
+  enable_ocr: true
+  enable_classification: true
+  enable_duplicate_detection: true
+  target_directory: "/mnt/nas/email-imports"
+  
+# Error Handling
+error_handling:
+  max_retries: 3
+  retry_delay: 300  # 5 minutes
+  log_errors: true
+  notify_on_error: true 

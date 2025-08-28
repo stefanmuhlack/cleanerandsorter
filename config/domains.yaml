@@ -1,0 +1,100 @@
+# Domain Management Configuration
+# Sample domains for TLD Manager
+
+domains:
+  - domain: "example.com"
+    registrar: "GoDaddy"
+    registration_date: "2023-01-15"
+    expiry_date: "2024-01-15"
+    renewal_date: "2024-01-15"
+    status: "active"
+    customer: "Example Corp"
+    billing_email: "billing@example.com"
+    annual_cost: 15.99
+    auto_renewal: true
+    notes: "Main company domain"
+
+  - domain: "example.org"
+    registrar: "Namecheap"
+    registration_date: "2023-03-20"
+    expiry_date: "2024-03-20"
+    renewal_date: "2024-03-20"
+    status: "active"
+    customer: "Example Corp"
+    billing_email: "billing@example.com"
+    annual_cost: 12.99
+    auto_renewal: true
+    notes: "Organization domain"
+
+  - domain: "example.net"
+    registrar: "Cloudflare"
+    registration_date: "2023-06-10"
+    expiry_date: "2024-06-10"
+    renewal_date: "2024-06-10"
+    status: "active"
+    customer: "Example Corp"
+    billing_email: "billing@example.com"
+    annual_cost: 9.99
+    auto_renewal: true
+    notes: "Network domain"
+
+  - domain: "client1.com"
+    registrar: "GoDaddy"
+    registration_date: "2023-02-01"
+    expiry_date: "2024-02-01"
+    renewal_date: "2024-02-01"
+    status: "active"
+    customer: "Client One GmbH"
+    billing_email: "admin@client1.com"
+    annual_cost: 19.99
+    auto_renewal: true
+    notes: "Client domain"
+
+  - domain: "client2.de"
+    registrar: "IONOS"
+    registration_date: "2023-04-15"
+    expiry_date: "2024-04-15"
+    renewal_date: "2024-04-15"
+    status: "active"
+    customer: "Client Two AG"
+    billing_email: "it@client2.de"
+    annual_cost: 14.99
+    auto_renewal: true
+    notes: "German client domain"
+
+# Email Templates Configuration
+email_templates:
+  - name: "domain_renewal"
+    subject: "Domain Renewal Reminder - {domain}"
+    body: |
+      Dear {customer},
+      
+      This is a reminder that your domain {domain} will expire on {expiry_date}.
+      
+      Domain Details:
+      - Domain: {domain}
+      - Registrar: {registrar}
+      - Expiry Date: {expiry_date}
+      - Annual Cost: €{annual_cost}
+      
+      Please ensure timely renewal to avoid service interruption.
+      
+      Best regards,
+      Your Domain Management Team
+    variables: ["domain", "customer", "expiry_date", "registrar", "annual_cost"]
+
+  - name: "billing_report"
+    subject: "Domain Billing Report - {month_year}"
+    body: |
+      Dear {customer},
+      
+      Please find attached your domain billing report for {month_year}.
+      
+      Summary:
+      - Total Domains: {total_domains}
+      - Total Annual Cost: €{total_cost}
+      - Renewals Due: {renewals_due}
+      
+      Best regards,
+      Your Domain Management Team
+    variables: ["customer", "month_year", "total_domains", "total_cost", "renewals_due"] 

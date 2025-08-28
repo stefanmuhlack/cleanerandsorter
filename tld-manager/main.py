@@ -29,7 +29,10 @@ import time
 import threading
 
 # Import LLM Manager for report generation
-from llm_manager import LLMClassifier
+try:
+    from llm_manager import LLMClassifier
+except ImportError:
+    LLMClassifier = None
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

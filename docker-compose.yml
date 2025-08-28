@@ -382,6 +382,7 @@ volumes:
   ollama_data:
   email_attachments:
   otrs_attachments:
+  nas-share:
 
 networks:
   default:

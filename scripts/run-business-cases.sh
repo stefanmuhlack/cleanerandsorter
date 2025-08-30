@@ -156,7 +156,7 @@ run_sprint_f() {
     echo "Ziel: Weltklasse User Experience und Erweiterbarkeit"
     echo ""
     
-    if ./scripts/sprint-f-ux-excellence.sh; then
+    if ./scripts/sprint-f-ux-future.sh; then
         success "Sprint F erfolgreich abgeschlossen"
         return 0
     else

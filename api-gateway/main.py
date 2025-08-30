@@ -40,67 +40,22 @@ security = HTTPBearer()
 # Redis for caching and rate limiting
 redis_client: Optional[redis.Redis] = None
 
-# Service configurations
-SERVICES = {
-    'ingest': {
-        'url': 'http://cas_ingest:8000',
-        'health_check': '/health',
-        'timeout': 30,
-        'rate_limit': '100/minute'
-    },
-    'email': {
-        'url': 'http://cas_email_processor:8000',
-        'health_check': '/health',
-        'timeout': 15,
-        'rate_limit': '50/minute'
-    },
-    'footage': {
-        'url': 'http://cas_footage_service:8000',
-        'health_check': '/health',
-        'timeout': 20,
-        'rate_limit': '30/minute'
-    },
-    'llm': {
-        'url': 'http://cas_llm_manager:8000',
-        'health_check': '/health',
-        'timeout': 60,
-        'rate_limit': '20/minute'
-    },
-    'otrs': {
-        'url': 'http://cas_otrs_integration:8000',
-        'health_check': '/health',
-        'timeout': 10,
-        'rate_limit': '100/minute'
-    },
-    'backup': {
-        'url': 'http://cas_backup_service:8000',
-        'health_check': '/health',
-        'timeout': 30,
-        'rate_limit': '10/minute'
-    },
-    'tld': {
-        'url': 'http://cas_tld_manager:8000',
-        'health_check': '/health',
-        'timeout': 15,
-        'rate_limit': '50/minute'
-    }
-}
+# Import configuration loader
+from config_loader import config_loader
 
-# Direct route mappings for frontend compatibility
-DIRECT_ROUTES = {
-    'upload': 'ingest',
-    'processing': 'ingest',
-    'health': 'ingest',
-    'metrics': 'ingest'
-}
+# Load configurations from YAML
+SERVICES = config_loader.get_services()
+DIRECT_ROUTES = config_loader.get_direct_routes()
+GATEWAY_CONFIG = config_loader.get_gateway_config()
+MONITORING_CONFIG = config_loader.get_monitoring_config()
 
-# JWT configuration
-JWT_SECRET = "your-super-secret-jwt-key-change-in-production"
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION = 24 * 60 * 60  # 24 hours
+# JWT configuration from YAML
+JWT_SECRET = GATEWAY_CONFIG.get('jwt_secret', "your-super-secret-jwt-key-change-in-production")
+JWT_ALGORITHM = GATEWAY_CONFIG.get('jwt_algorithm', "HS256")
+JWT_EXPIRATION = GATEWAY_CONFIG.get('jwt_expiration', 24 * 60 * 60)  # 24 hours
 
-# Health check cache TTL
-health_cache_ttl = 30  # seconds
+# Health check cache TTL from YAML
+health_cache_ttl = GATEWAY_CONFIG.get('health_cache_ttl', 30)  # seconds
 
 # Create FastAPI app
 app = FastAPI(
@@ -287,7 +242,10 @@ async def metrics():
         media_type=CONTENT_TYPE_LATEST
     )
 
-# Specific API routes (must come before generic service routing)
+# Specific API routes (MUST come before any generic routing)
+# These routes are configured in config/gateway-services.yml
+
+# Fallback specific routes (for backward compatibility)
 @app.get("/api/metrics/business")
 async def get_business_metrics():
     """Get business metrics - MOCK IMPLEMENTATION."""
@@ -373,6 +331,106 @@ async def get_users():
         "total": 2
     }
 
+# Authentication endpoints
+@app.post("/auth/login")
+async def login(username: str, password: str):
+    """Authenticate user and return JWT token."""
+    # In production, validate against database
+    if username == "admin" and password == "admin123":
+        payload = {
+            'user_id': 'admin',
+            'username': username,
+            'role': 'admin',
+            'exp': datetime.utcnow() + timedelta(seconds=JWT_EXPIRATION)
+        }
+        token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        return {"access_token": token, "token_type": "bearer"}
+    else:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+# Service information
+@app.get("/services")
+async def list_services():
+    """List all available services."""
+    return {
+        "services": list(SERVICES.keys()),
+        "service_configs": {
+            name: {
+                "url": config["url"],
+                "timeout": config["timeout"],
+                "rate_limit": config["rate_limit"]
+            }
+            for name, config in SERVICES.items()
+        }
+    }
+
+# Helper function that encapsulates the actual proxy logic
+async def forward_request(service: str, path: str, request: Request, user: Dict[str, Any]) -> Response:
+    """Forward request to appropriate service with rate limiting and error handling."""
+    # Map "frontend names" to service names
+    if service in DIRECT_ROUTES:
+        service = DIRECT_ROUTES[service]
+
+    if service not in SERVICES:
+        raise HTTPException(status_code=404, detail=f"Service '{service}' not found")
+
+    service_config = SERVICES[service]
+    redis_client = await get_redis()
+
+    # Rate limit per user and service
+    rate_limit_key = f"rate_limit:{service}:{user.get('user_id', 'anonymous')}"
+    current_requests = await redis_client.get(rate_limit_key)
+    limit, _ = service_config["rate_limit"].split("/")
+    if current_requests and int(current_requests) >= int(limit):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+    await redis_client.incr(rate_limit_key)
+    await redis_client.expire(rate_limit_key, 60)
+
+    # Build target URL
+    target_url = f"{service_config['url']}/{path}"
+    body = await request.body() if request.method in {"POST", "PUT", "PATCH"} else None
+
+    # Transfer headers (without Host, Content-Length etc.)
+    headers = {k: v for k, v in request.headers.items()
+               if k.lower() not in {"host", "content-length", "transfer-encoding"}}
+    headers["X-User-ID"] = user.get("user_id", "anonymous")
+    headers["X-User-Role"] = user.get("role", "user")
+
+    try:
+        async with httpx.AsyncClient(timeout=service_config["timeout"]) as client:
+            resp = await client.request(
+                method=request.method,
+                url=target_url,
+                params=request.query_params,
+                headers=headers,
+                content=body,
+            )
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            headers=dict(resp.headers),
+        )
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail=f"Service '{service}' timeout")
+    except httpx.ConnectError:
+        raise HTTPException(status_code=503, detail=f"Service '{service}' unavailable")
+    except Exception as e:
+        logger.error(f"Error proxying request to {service}: {e}")
+        raise HTTPException(status_code=500, detail="Internal gateway error")
+
+# Specific API routes with /api prefix (MUST come before generic catch-all route)
+@app.api_route("/api/{service}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+@limiter.limit("100/minute")
+async def proxy_api_route(
+    request: Request,
+    service: str,
+    path: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> Response:
+    """Proxy requests with /api prefix to appropriate services."""
+    # For /api/upload e.g., service becomes "upload" and forward_request logic is used
+    return await forward_request(service, path, request, user)
+
 # Generic service routing (with authentication)
 @app.api_route("/{service}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 @limiter.limit("100/minute")
@@ -446,39 +504,6 @@ async def proxy_request(
     except Exception as e:
         logger.error(f"Error proxying request to {service}: {e}")
         raise HTTPException(status_code=500, detail="Internal gateway error")
-
-# Authentication endpoints
-@app.post("/auth/login")
-async def login(username: str, password: str):
-    """Authenticate user and return JWT token."""
-    # In production, validate against database
-    if username == "admin" and password == "admin123":
-        payload = {
-            'user_id': 'admin',
-            'username': username,
-            'role': 'admin',
-            'exp': datetime.utcnow() + timedelta(seconds=JWT_EXPIRATION)
-        }
-        token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-        return {"access_token": token, "token_type": "bearer"}
-    else:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-# Service information
-@app.get("/services")
-async def list_services():
-    """List all available services."""
-    return {
-        "services": list(SERVICES.keys()),
-        "service_configs": {
-            name: {
-                "url": config["url"],
-                "timeout": config["timeout"],
-                "rate_limit": config["rate_limit"]
-            }
-            for name, config in SERVICES.items()
-        }
-    }
 
 if __name__ == "__main__":
     import uvicorn

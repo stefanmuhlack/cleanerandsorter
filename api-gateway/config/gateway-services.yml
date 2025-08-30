@@ -1,0 +1,105 @@
+# API Gateway Services Configuration
+# This file defines all services and their routing rules
+# Changes here will be loaded at startup without code modifications
+
+services:
+  ingest:
+    url: "http://cas_ingest:8000"
+    health_check: "/health"
+    timeout: 30
+    rate_limit: "100/minute"
+    description: "Document ingestion and processing service"
+    
+  email:
+    url: "http://cas_email_processor:8000"
+    health_check: "/health"
+    timeout: 15
+    rate_limit: "50/minute"
+    description: "Email processing and notification service"
+    
+  footage:
+    url: "http://cas_footage_service:8000"
+    health_check: "/health"
+    timeout: 20
+    rate_limit: "30/minute"
+    description: "Video and media processing service"
+    
+  llm:
+    url: "http://cas_llm_manager:8000"
+    health_check: "/health"
+    timeout: 60
+    rate_limit: "20/minute"
+    description: "Large Language Model management service"
+    
+  otrs:
+    url: "http://cas_otrs_integration:8000"
+    health_check: "/health"
+    timeout: 10
+    rate_limit: "100/minute"
+    description: "OTRS ticketing system integration"
+    
+  backup:
+    url: "http://cas_backup_service:8000"
+    health_check: "/health"
+    timeout: 30
+    rate_limit: "10/minute"
+    description: "Backup and recovery service"
+    
+  tld:
+    url: "http://cas_tld_manager:8000"
+    health_check: "/health"
+    timeout: 15
+    rate_limit: "50/minute"
+    description: "Top-level domain management service"
+
+# Direct route mappings for frontend compatibility
+# Maps frontend route names to actual service names
+direct_routes:
+  upload: "ingest"
+  processing: "ingest"
+  health: "ingest"
+  metrics: "ingest"
+
+# API-specific routes that should be handled directly by the gateway
+# These routes bypass the generic service routing
+api_routes:
+  metrics:
+    business:
+      path: "/api/metrics/business"
+      method: "GET"
+      authentication: false
+      description: "Business metrics aggregation endpoint"
+      mock_data: true
+      
+  audit:
+    logs:
+      path: "/api/audit/logs"
+      method: "GET"
+      authentication: false
+      description: "Audit logs endpoint"
+      mock_data: true
+      
+  users:
+    list:
+      path: "/users/"
+      method: "GET"
+      authentication: false
+      description: "User management endpoint"
+      mock_data: true
+
+# Gateway configuration
+gateway:
+  jwt_secret: "your-super-secret-jwt-key-change-in-production"
+  jwt_algorithm: "HS256"
+  jwt_expiration: 86400  # 24 hours in seconds
+  health_cache_ttl: 30  # seconds
+  rate_limit_default: "100/minute"
+  cors_origins: ["*"]
+  trusted_hosts: ["*"]
+  
+# Monitoring and metrics
+monitoring:
+  prometheus_enabled: true
+  request_logging: true
+  health_check_interval: 30  # seconds
+  service_timeout_default: 30  # seconds

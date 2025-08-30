@@ -203,10 +203,10 @@ services:
     ports:
       - "3001:3000"
     environment:
-      - REACT_APP_API_URL=http://localhost:8000
-      - REACT_APP_MINIO_ENDPOINT=http://localhost:9000
-      - REACT_APP_ELASTICSEARCH_URL=http://localhost:9200
-      - REACT_APP_PAPERLESS_URL=http://localhost:8010
+      - REACT_APP_API_URL=http://ingest-service:8000
+      - REACT_APP_MINIO_ENDPOINT=http://minio:9000
+      - REACT_APP_ELASTICSEARCH_URL=http://elasticsearch:9200
+      - REACT_APP_PAPERLESS_URL=http://paperless:8000
     depends_on:
       - ingest-service
       - paperless

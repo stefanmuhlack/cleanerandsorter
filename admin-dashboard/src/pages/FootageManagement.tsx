@@ -121,6 +121,9 @@ const FootageManagement: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [generateThumbnail, setGenerateThumbnail] = useState(true);
+  const [extractMetadata, setExtractMetadata] = useState(true);
+  const [enableClassification, setEnableClassification] = useState(true);
 
   // Mock data for demonstration
   useEffect(() => {
@@ -579,19 +582,19 @@ const FootageManagement: React.FC = () => {
             </Grid>
             <Grid item xs={4}>
               <FormControlLabel
-                control={<Switch defaultChecked />}
+                control={<Switch checked={generateThumbnail} onChange={(e) => setGenerateThumbnail(e.target.checked)} />}
                 label="Generate Thumbnail"
               />
             </Grid>
             <Grid item xs={4}>
               <FormControlLabel
-                control={<Switch defaultChecked />}
+                control={<Switch checked={extractMetadata} onChange={(e) => setExtractMetadata(e.target.checked)} />}
                 label="Extract Metadata"
               />
             </Grid>
             <Grid item xs={4}>
               <FormControlLabel
-                control={<Switch defaultChecked />}
+                control={<Switch checked={enableClassification} onChange={(e) => setEnableClassification(e.target.checked)} />}
                 label="Auto Classify"
               />
             </Grid>
@@ -600,7 +603,11 @@ const FootageManagement: React.FC = () => {
         <DialogActions>
           <Button onClick={() => setUploadDialog(false)}>Cancel</Button>
           <Button 
-            onClick={() => handleUpload({})}
+            onClick={() => handleUpload({
+              generate_thumbnail: generateThumbnail,
+              extract_metadata: extractMetadata,
+              enable_classification: enableClassification
+            })}
             disabled={loading}
             variant="contained"
           >

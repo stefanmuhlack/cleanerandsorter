@@ -43,7 +43,7 @@ class PostgresFileRepository(FileRepository):
                 filename=file.filename,
                 file_type=file.file_type.value,
                 status=file.status.value,
-                                   file_metadata=file.metadata.dict() if file.metadata else None,
+                file_metadata=file.metadata.dict() if file.metadata else None,
                 sorting_rule_id=file.sorting_rule.id if file.sorting_rule else None,
                 target_path=str(file.target_path) if file.target_path else None,
                 bucket_name=file.bucket_name,
@@ -59,11 +59,11 @@ class PostgresFileRepository(FileRepository):
             
             return self._model_to_entity(file_model)
     
-    async def get_by_id(self, file_id: UUID) -> Optional[FileEntity]:
+    async def get_by_id(self, file_id: str) -> Optional[FileEntity]:
         """Get a file by its ID."""
         async with self.session_factory() as session:
             result = await session.execute(
-                select(FileModel).where(FileModel.id == file_id)
+                select(FileModel).where(FileModel.id == UUID(file_id))
             )
             file_model = result.scalar_one_or_none()
             
@@ -71,11 +71,11 @@ class PostgresFileRepository(FileRepository):
                 return self._model_to_entity(file_model)
             return None
     
-    async def get_by_status(self, status: str) -> List[FileEntity]:
+    async def get_by_status(self, status: ProcessingStatus) -> List[FileEntity]:
         """Get files by processing status."""
         async with self.session_factory() as session:
             result = await session.execute(
-                select(FileModel).where(FileModel.status == status)
+                select(FileModel).where(FileModel.status == status.value)
             )
             file_models = result.scalars().all()
             
@@ -83,42 +83,30 @@ class PostgresFileRepository(FileRepository):
     
     async def get_pending_files(self) -> List[FileEntity]:
         """Get all pending files."""
-        return await self.get_by_status(ProcessingStatus.PENDING.value)
+        return await self.get_by_status(ProcessingStatus.PENDING)
     
-    async def update_status(self, file_id: UUID, status: str, error_message: Optional[str] = None) -> bool:
+    async def update_status(self, file_id: str, status: ProcessingStatus) -> bool:
         """Update the status of a file."""
         async with self.session_factory() as session:
             update_data = {
-                "status": status,
+                "status": status.value,
                 "updated_at": datetime.utcnow()
             }
             
-            if error_message:
-                # Get current errors and append new one
-                result = await session.execute(
-                    select(FileModel.processing_errors).where(FileModel.id == file_id)
-                )
-                current_errors = result.scalar_one_or_none()
-                if current_errors:
-                    current_errors.append(error_message)
-                    update_data["processing_errors"] = current_errors
-                else:
-                    update_data["processing_errors"] = [error_message]
-            
             result = await session.execute(
                 update(FileModel)
-                .where(FileModel.id == file_id)
+                .where(FileModel.id == UUID(file_id))
                 .values(**update_data)
             )
             
             await session.commit()
             return result.rowcount > 0
     
-    async def delete(self, file_id: UUID) -> bool:
+    async def delete(self, file_id: str) -> bool:
         """Delete a file entity."""
         async with self.session_factory() as session:
             result = await session.execute(
-                delete(FileModel).where(FileModel.id == file_id)
+                delete(FileModel).where(FileModel.id == UUID(file_id))
             )
             await session.commit()
             return result.rowcount > 0
@@ -209,11 +197,11 @@ class PostgresSortingRuleRepository(SortingRuleRepository):
             
             return self._model_to_entity(rule_model)
     
-    async def get_by_id(self, rule_id: UUID) -> Optional[SortingRule]:
+    async def get_by_id(self, rule_id: str) -> Optional[SortingRule]:
         """Get a sorting rule by its ID."""
         async with self.session_factory() as session:
             result = await session.execute(
-                select(SortingRuleModel).where(SortingRuleModel.id == rule_id)
+                select(SortingRuleModel).where(SortingRuleModel.id == UUID(rule_id))
             )
             rule_model = result.scalar_one_or_none()
             
@@ -229,7 +217,7 @@ class PostgresSortingRuleRepository(SortingRuleRepository):
             
             return [self._model_to_entity(model) for model in rule_models]
     
-    async def get_enabled_rules(self) -> List[SortingRule]:
+    async def get_enabled(self) -> List[SortingRule]:
         """Get all enabled sorting rules."""
         async with self.session_factory() as session:
             result = await session.execute(
@@ -261,16 +249,40 @@ class PostgresSortingRuleRepository(SortingRuleRepository):
             await session.commit()
             
             # Get updated rule
-            return await self.get_by_id(rule.id)
+            return await self.get_by_id(str(rule.id))
     
-    async def delete(self, rule_id: UUID) -> bool:
+    async def delete(self, rule_id: str) -> bool:
         """Delete a sorting rule."""
         async with self.session_factory() as session:
             result = await session.execute(
-                delete(SortingRuleModel).where(SortingRuleModel.id == rule_id)
+                delete(SortingRuleModel).where(SortingRuleModel.id == UUID(rule_id))
             )
             await session.commit()
             return result.rowcount > 0
+    
+    async def update(self, rule: SortingRule) -> SortingRule:
+        """Update a sorting rule."""
+        async with self.session_factory() as session:
+            result = await session.execute(
+                update(SortingRuleModel)
+                .where(SortingRuleModel.id == rule.id)
+                .values(
+                    name=rule.name,
+                    keywords=rule.keywords,
+                    target_path=rule.target_path,
+                    priority=rule.priority,
+                    enabled=rule.enabled,
+                    file_types=[ft.value for ft in rule.file_types] if rule.file_types else None,
+                    min_file_size=rule.min_file_size,
+                    max_file_size=rule.max_file_size,
+                    updated_at=rule.updated_at
+                )
+            )
+            
+            await session.commit()
+            
+            # Get updated rule
+            return await self.get_by_id(rule.id)
     
     def _model_to_entity(self, model: SortingRuleModel) -> SortingRule:
         """Convert database model to domain entity."""
@@ -319,17 +331,27 @@ class PostgresProcessingBatchRepository(ProcessingBatchRepository):
             
             return self._model_to_entity(batch_model)
     
-    async def get_by_id(self, batch_id: UUID) -> Optional[ProcessingBatch]:
+    async def get_by_id(self, batch_id: str) -> Optional[ProcessingBatch]:
         """Get a processing batch by its ID."""
         async with self.session_factory() as session:
             result = await session.execute(
-                select(ProcessingBatchModel).where(ProcessingBatchModel.id == batch_id)
+                select(ProcessingBatchModel).where(ProcessingBatchModel.id == UUID(batch_id))
             )
             batch_model = result.scalar_one_or_none()
             
             if batch_model:
                 return self._model_to_entity(batch_model)
             return None
+    
+    async def get_by_status(self, status: ProcessingStatus) -> List[ProcessingBatch]:
+        """Get processing batches by status."""
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(ProcessingBatchModel).where(ProcessingBatchModel.status == status.value)
+            )
+            batch_models = result.scalars().all()
+            
+            return [self._model_to_entity(model) for model in batch_models]
     
     async def get_active_batches(self) -> List[ProcessingBatch]:
         """Get all active processing batches."""
@@ -346,13 +368,13 @@ class PostgresProcessingBatchRepository(ProcessingBatchRepository):
             
             return [self._model_to_entity(model) for model in batch_models]
     
-    async def update_status(self, batch_id: UUID, status: str) -> bool:
+    async def update_status(self, batch_id: str, status: ProcessingStatus) -> bool:
         """Update the status of a batch."""
         async with self.session_factory() as session:
             result = await session.execute(
                 update(ProcessingBatchModel)
-                .where(ProcessingBatchModel.id == batch_id)
-                .values(status=status)
+                .where(ProcessingBatchModel.id == UUID(batch_id))
+                .values(status=status.value)
             )
             
             await session.commit()

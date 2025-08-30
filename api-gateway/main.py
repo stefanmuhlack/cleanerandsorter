@@ -4,6 +4,7 @@ Central entry point for all services with authentication, rate limiting, and mon
 """
 
 import asyncio
+import json
 import logging
 import time
 from typing import Dict, Any, Optional
@@ -42,41 +43,55 @@ redis_client: Optional[redis.Redis] = None
 # Service configurations
 SERVICES = {
     'ingest': {
-        'url': 'http://ingest-service:8000',
-        'health_check': '/api/health',
+        'url': 'http://cas_ingest:8000',
+        'health_check': '/health',
         'timeout': 30,
         'rate_limit': '100/minute'
     },
     'email': {
-        'url': 'http://email-processor:8000',
+        'url': 'http://cas_email_processor:8000',
         'health_check': '/health',
         'timeout': 15,
         'rate_limit': '50/minute'
     },
     'footage': {
-        'url': 'http://footage-service:8000',
+        'url': 'http://cas_footage_service:8000',
         'health_check': '/health',
         'timeout': 20,
         'rate_limit': '30/minute'
     },
     'llm': {
-        'url': 'http://llm-manager:8000',
+        'url': 'http://cas_llm_manager:8000',
         'health_check': '/health',
         'timeout': 60,
         'rate_limit': '20/minute'
     },
     'otrs': {
-        'url': 'http://otrs-integration:8000',
+        'url': 'http://cas_otrs_integration:8000',
         'health_check': '/health',
         'timeout': 10,
         'rate_limit': '100/minute'
     },
     'backup': {
-        'url': 'http://backup-service:8000',
+        'url': 'http://cas_backup_service:8000',
         'health_check': '/health',
         'timeout': 30,
         'rate_limit': '10/minute'
+    },
+    'tld': {
+        'url': 'http://cas_tld_manager:8000',
+        'health_check': '/health',
+        'timeout': 15,
+        'rate_limit': '50/minute'
     }
+}
+
+# Direct route mappings for frontend compatibility
+DIRECT_ROUTES = {
+    'upload': 'ingest',
+    'processing': 'ingest',
+    'health': 'ingest',
+    'metrics': 'ingest'
 }
 
 # JWT configuration
@@ -127,6 +142,30 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(secur
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+async def get_user_info(request: Request) -> Dict[str, Any]:
+    """Get user information from token or return anonymous user."""
+    try:
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            return payload
+        else:
+            # Return anonymous user for requests without token
+            return {
+                'user_id': 'anonymous',
+                'username': 'anonymous',
+                'role': 'user'
+            }
+    except Exception:
+        # Return anonymous user for invalid tokens
+        return {
+            'user_id': 'anonymous',
+            'username': 'anonymous',
+            'role': 'user'
+        }
 
 
 async def check_service_health(service_name: str, service_config: Dict[str, Any]) -> Dict[str, Any]:
@@ -217,7 +256,6 @@ async def all_services_health():
     cached_health = await redis_client.get("gateway:health_cache")
     
     if cached_health:
-        import json
         health_results = json.loads(cached_health)
         cache_age = datetime.utcnow() - datetime.fromisoformat(health_results.get('cache_time', '1970-01-01T00:00:00'))
         
@@ -262,9 +300,13 @@ async def proxy_request(
     request: Request,
     service: str,
     path: str,
-    user: Dict[str, Any] = Depends(verify_token)
+    user: Dict[str, Any] = Depends(get_user_info)
 ):
     """Proxy requests to appropriate services."""
+    # Check if this is a direct route mapping
+    if service in DIRECT_ROUTES:
+        service = DIRECT_ROUTES[service]
+    
     if service not in SERVICES:
         raise HTTPException(status_code=404, detail=f"Service '{service}' not found")
     

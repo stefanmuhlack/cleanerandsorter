@@ -17,9 +17,11 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends
 from fastapi.security import HTTPBearer
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 import yaml
 from loguru import logger
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 # Import LLM Manager for classification
 try:
@@ -40,10 +42,18 @@ app = FastAPI(
 # Security
 security = HTTPBearer()
 
+# Prometheus metrics
+REQUEST_COUNT = Counter('otrs_http_requests_total', 'Total HTTP requests', ['method', 'endpoint', 'status'])
+REQUEST_LATENCY = Histogram('otrs_http_request_duration_seconds', 'HTTP request latency')
+EXPORT_COUNT = Counter('otrs_exports_total', 'Total ticket exports', ['status'])
+TICKET_COUNT = Counter('otrs_tickets_processed_total', 'Total tickets processed', ['status'])
+
 # Configuration
 class OTRSConfig:
     def __init__(self):
-        self.api_url = os.getenv("OTRS_API_URL", "http://otrs.company.com/otrs/nph-genericinterface.pl/Webservice/GenericTicketConnectorREST")
+        # Use localhost for development if no external OTRS is configured
+        default_otrs_url = os.getenv("OTRS_API_URL", "http://localhost:8080/otrs/nph-genericinterface.pl/Webservice/GenericTicketConnectorREST")
+        self.api_url = default_otrs_url
         self.api_key = os.getenv("OTRS_API_KEY", "")
         self.username = os.getenv("OTRS_USERNAME", "api_user")
         self.password = os.getenv("OTRS_PASSWORD", "")
@@ -51,6 +61,8 @@ class OTRSConfig:
         self.attachment_path = os.getenv("OTRS_ATTACHMENT_PATH", "/mnt/nas/otrs-attachments")
         self.max_tickets_per_batch = int(os.getenv("OTRS_MAX_TICKETS", "100"))
         self.enable_llm_classification = os.getenv("OTRS_ENABLE_LLM", "true").lower() == "true"
+        # Flag to indicate if external OTRS is available
+        self.external_otrs_available = os.getenv("OTRS_EXTERNAL_AVAILABLE", "false").lower() == "true"
 
 config = OTRSConfig()
 
@@ -225,19 +237,44 @@ async def classify_ticket_content(ticket_info: Dict[str, Any]) -> Dict[str, Any]
 async def health_check():
     """Health check endpoint"""
     try:
-        # Test OTRS connection
-        test_response = await exporter.client.get("/", timeout=5.0)
-        otrs_status = "connected" if test_response.status_code == 200 else "disconnected"
-        
-        return {
+        # Check if service is running
+        health_status = {
             "status": "healthy",
             "service": "otrs-integration",
-            "otrs_connection": otrs_status,
-            "llm_classifier": "available" if llm_classifier else "unavailable"
+            "llm_classifier": "available" if llm_classifier else "unavailable",
+            "timestamp": datetime.now().isoformat()
         }
+        
+        # Only test external OTRS connection if configured and available
+        if config.external_otrs_available:
+            try:
+                # Test OTRS connection with timeout
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    response = await client.get(config.api_url)
+                    health_status["otrs_connection"] = "connected" if response.status_code == 200 else "disconnected"
+            except Exception as e:
+                logger.warning(f"External OTRS connection test failed: {e}")
+                health_status["otrs_connection"] = "unreachable"
+        else:
+            health_status["otrs_connection"] = "configured"
+        
+        return health_status
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=503, detail="Service unhealthy")
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus metrics endpoint"""
+    try:
+        metrics_data = generate_latest()
+        return Response(
+            content=metrics_data,
+            media_type=CONTENT_TYPE_LATEST
+        )
+    except Exception as e:
+        logger.error("Error generating metrics", error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to generate metrics")
 
 @app.post("/export-tickets", response_model=ExportResult)
 async def export_tickets(
@@ -313,6 +350,7 @@ async def process_ticket_export(export_id: str, request: TicketExportRequest):
                 
                 if not ticket_details:
                     export_tasks[export_id]["failed_tickets"] += 1
+                    TICKET_COUNT.labels(status="failed").inc()
                     continue
                 
                 # Process attachments if requested
@@ -357,10 +395,12 @@ async def process_ticket_export(export_id: str, request: TicketExportRequest):
                 
                 processed_tickets.append(ticket_info.dict())
                 export_tasks[export_id]["processed_tickets"] += 1
+                TICKET_COUNT.labels(status="success").inc()
                 
             except Exception as e:
                 logger.error(f"Error processing ticket {ticket.get('TicketID')}: {e}")
                 export_tasks[export_id]["failed_tickets"] += 1
+                TICKET_COUNT.labels(status="failed").inc()
         
         # Save export results
         export_file = export_dir / "tickets_export.json"
@@ -371,12 +411,16 @@ async def process_ticket_export(export_id: str, request: TicketExportRequest):
         export_tasks[export_id]["status"] = "completed"
         export_tasks[export_id]["export_path"] = str(export_file)
         
+        # Update metrics
+        EXPORT_COUNT.labels(status="completed").inc()
+        
         logger.info(f"Export {export_id} completed: {len(processed_tickets)} tickets processed")
         
     except Exception as e:
         logger.error(f"Error in export task {export_id}: {e}")
         export_tasks[export_id]["status"] = "failed"
         export_tasks[export_id]["error"] = str(e)
+        EXPORT_COUNT.labels(status="failed").inc()
 
 @app.get("/export-status/{export_id}")
 async def get_export_status(export_id: str):

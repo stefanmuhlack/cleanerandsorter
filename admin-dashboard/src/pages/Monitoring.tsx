@@ -45,7 +45,7 @@ import {
   Memory as MemoryIcon,
   Speed as SpeedIcon,
   CloudQueue as CloudQueueIcon,
-  Database as DatabaseIcon,
+  Storage as DatabaseIcon,
   Router as RouterIcon,
   Computer as ComputerIcon
 } from '@mui/icons-material';

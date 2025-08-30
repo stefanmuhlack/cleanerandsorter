@@ -92,7 +92,7 @@ export const uploadFiles = createAsyncThunk(
     const formData = new FormData();
     files.forEach(file => formData.append('files', file));
     
-    const response = await fetch('/api/upload', {
+    const response = await fetch('/upload', {
       method: 'POST',
       body: formData
     });
@@ -108,7 +108,7 @@ export const uploadFiles = createAsyncThunk(
 export const processFiles = createAsyncThunk(
   'fileProcessing/processFiles',
   async (config: Partial<ProcessingConfig>) => {
-    const response = await fetch('/api/processing/start', {
+    const response = await fetch('/processing/start', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -127,7 +127,7 @@ export const processFiles = createAsyncThunk(
 export const stopProcessing = createAsyncThunk(
   'fileProcessing/stopProcessing',
   async () => {
-    const response = await fetch('/api/processing/stop', {
+    const response = await fetch('/processing/stop', {
       method: 'POST'
     });
     
@@ -142,7 +142,7 @@ export const stopProcessing = createAsyncThunk(
 export const rollbackJob = createAsyncThunk(
   'fileProcessing/rollbackJob',
   async (jobId: string) => {
-    const response = await fetch(`/api/processing/rollback/${jobId}`, {
+    const response = await fetch(`/processing/rollback/${jobId}`, {
       method: 'POST'
     });
     
@@ -157,7 +157,7 @@ export const rollbackJob = createAsyncThunk(
 export const fetchProcessingJobs = createAsyncThunk(
   'fileProcessing/fetchJobs',
   async () => {
-    const response = await fetch('/api/processing/jobs');
+    const response = await fetch('/processing/jobs');
     
     if (!response.ok) {
       throw new Error('Failed to fetch jobs');
@@ -170,7 +170,7 @@ export const fetchProcessingJobs = createAsyncThunk(
 export const fetchProcessingStats = createAsyncThunk(
   'fileProcessing/fetchStats',
   async () => {
-    const response = await fetch('/api/processing/stats');
+    const response = await fetch('/processing/stats');
     
     if (!response.ok) {
       throw new Error('Failed to fetch stats');

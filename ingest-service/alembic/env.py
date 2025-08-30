@@ -18,7 +18,11 @@ config = context.config
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    try:
+        fileConfig(config.config_file_name, disable_existing_loggers=False)
+    except Exception:
+        # If there's an interpolation error, skip logging config
+        pass
 
 # add your model's MetaData object here
 # for 'autogenerate' support
@@ -31,7 +35,11 @@ target_metadata = Base.metadata
 
 def get_url():
     settings = Settings()
-    return settings.database_url
+    # Convert async URL to sync URL for Alembic
+    url = settings.database_url
+    if url.startswith('postgresql+asyncpg://'):
+        url = url.replace('postgresql+asyncpg://', 'postgresql://')
+    return url
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.

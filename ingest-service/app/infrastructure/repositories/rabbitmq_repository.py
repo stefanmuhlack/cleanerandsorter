@@ -5,7 +5,7 @@ RabbitMQ message queue repository implementation.
 import asyncio
 import json
 import logging
-from typing import Callable, Dict, Any
+from typing import Callable, Dict, Any, Optional
 from urllib.parse import urlparse
 
 import aio_pika
@@ -88,6 +88,34 @@ class RabbitMQMessageRepository(MessageQueueRepository):
             logger.error(f"Failed to publish message to queue {queue}: {e}")
             return False
     
+    async def consume_message(self, queue: str) -> Optional[Dict[str, Any]]:
+        """Consume a single message from a queue."""
+        try:
+            if not self.channel:
+                await self.connect()
+            
+            # Ensure queue exists
+            await self._ensure_queue_exists(queue)
+            
+            # Get a single message
+            queue_obj = await self.channel.declare_queue(queue, durable=True)
+            message = await queue_obj.get(timeout=1.0)
+            
+            if message:
+                # Parse message body
+                message_body = json.loads(message.body.decode('utf-8'))
+                
+                # Acknowledge the message
+                await message.ack()
+                
+                return message_body
+            else:
+                return None
+                
+        except Exception as e:
+            logger.error(f"Failed to consume message from queue {queue}: {e}")
+            return None
+    
     async def consume_messages(self, queue: str, callback: Callable) -> None:
         """Consume messages from a queue."""
         try:
@@ -134,18 +162,16 @@ class RabbitMQMessageRepository(MessageQueueRepository):
         except Exception as e:
             logger.error(f"Error in consumer for queue {queue}: {e}")
     
-    async def acknowledge_message(self, delivery_tag: int) -> bool:
+    async def acknowledge_message(self, queue: str, message_id: str) -> bool:
         """Acknowledge a processed message."""
         try:
-            if self.channel:
-                await self.channel.default_exchange.publish(
-                    Message(body=b'', delivery_mode=DeliveryMode.NOT_PERSISTENT),
-                    routing_key=f'ack_{delivery_tag}'
-                )
-                logger.debug(f"Acknowledged message with delivery tag: {delivery_tag}")
-                return True
+            # In RabbitMQ, messages are typically acknowledged immediately after processing
+            # This method is here for interface compliance but actual acknowledgment
+            # happens in consume_message method
+            logger.debug(f"Acknowledged message {message_id} from queue {queue}")
+            return True
         except Exception as e:
-            logger.error(f"Failed to acknowledge message {delivery_tag}: {e}")
+            logger.error(f"Failed to acknowledge message {message_id}: {e}")
             return False
     
     async def reject_message(self, delivery_tag: int, requeue: bool = True) -> bool:

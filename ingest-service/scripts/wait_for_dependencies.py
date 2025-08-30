@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 async def wait_for_postgres() -> bool:
     """Wait for PostgreSQL to be ready."""
-    host = os.getenv("POSTGRES_HOST", "localhost")
+    host = os.getenv("POSTGRES_HOST", "postgres")
     port = int(os.getenv("POSTGRES_PORT", "5432"))
     user = os.getenv("POSTGRES_USER", "cas_user")
     password = os.getenv("POSTGRES_PASSWORD", "cas_password")
@@ -49,7 +49,7 @@ async def wait_for_postgres() -> bool:
 
 async def wait_for_minio() -> bool:
     """Wait for MinIO to be ready."""
-    endpoint = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+    endpoint = os.getenv("MINIO_ENDPOINT", "minio:9000")
     access_key = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
     secret_key = os.getenv("MINIO_SECRET_KEY", "minioadmin")
     secure = os.getenv("MINIO_SECURE", "false").lower() == "true"
@@ -79,7 +79,7 @@ async def wait_for_minio() -> bool:
 
 async def wait_for_rabbitmq() -> bool:
     """Wait for RabbitMQ to be ready."""
-    host = os.getenv("RABBITMQ_HOST", "localhost")
+    host = os.getenv("RABBITMQ_HOST", "rabbitmq")
     port = int(os.getenv("RABBITMQ_PORT", "5672"))
     user = os.getenv("RABBITMQ_USER", "cas_user")
     password = os.getenv("RABBITMQ_PASSWORD", "cas_password")
@@ -107,7 +107,7 @@ async def wait_for_rabbitmq() -> bool:
 
 async def wait_for_elasticsearch() -> bool:
     """Wait for Elasticsearch to be ready."""
-    url = os.getenv("ELASTICSEARCH_URL", "http://localhost:9200")
+    url = os.getenv("ELASTICSEARCH_URL", "http://elasticsearch:9200")
     
     logger.info(f"Waiting for Elasticsearch at {url}...")
     

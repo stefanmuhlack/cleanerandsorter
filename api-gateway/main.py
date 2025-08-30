@@ -42,6 +42,7 @@ redis_client: Optional[redis.Redis] = None
 
 # Import configuration loader
 from config_loader import config_loader
+from rbac_loader import rbac
 
 # Load configurations from YAML
 SERVICES = config_loader.get_services()
@@ -331,6 +332,8 @@ async def get_users():
         "total": 2
     }
 
+
+
 # Authentication endpoints
 @app.post("/auth/login")
 async def login(username: str, password: str):
@@ -419,6 +422,28 @@ async def forward_request(service: str, path: str, request: Request, user: Dict[
         raise HTTPException(status_code=500, detail="Internal gateway error")
 
 # Specific API routes with /api prefix (MUST come before generic catch-all route)
+@app.get("/test/status")
+async def get_test_status():
+    """Get test service status - MOCK IMPLEMENTATION."""
+    return {
+        "service": "test_service",
+        "status": "operational",
+        "version": "1.0.0",
+        "timestamp": "2024-01-15T10:30:00Z",
+        "features": [
+            "dynamic_configuration",
+            "yaml_loading",
+            "service_discovery",
+            "health_monitoring"
+        ],
+        "configuration": {
+            "loaded_from": "YAML",
+            "last_updated": "2024-01-15T10:30:00Z",
+            "services_count": len(SERVICES),
+            "api_routes_count": len(config_loader.get_api_routes())
+        }
+    }
+
 @app.api_route("/api/{service}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 @limiter.limit("100/minute")
 async def proxy_api_route(
@@ -428,6 +453,11 @@ async def proxy_api_route(
     user: Dict[str, Any] = Depends(get_current_user),
 ) -> Response:
     """Proxy requests with /api prefix to appropriate services."""
+    # RBAC check
+    role = user.get('role', 'user')
+    full_path = f"{service}/{path}" if path else service
+    if not rbac.is_allowed(role, service, request.method, full_path):
+        raise HTTPException(status_code=403, detail="Forbidden by RBAC policy")
     # For /api/upload e.g., service becomes "upload" and forward_request logic is used
     return await forward_request(service, path, request, user)
 
@@ -449,6 +479,12 @@ async def proxy_request(
         raise HTTPException(status_code=404, detail=f"Service '{service}' not found")
     
     service_config = SERVICES[service]
+
+    # RBAC check for generic routes
+    role = user.get('role', 'user')
+    full_path = f"{service}/{path}" if path else service
+    if not rbac.is_allowed(role, service, request.method, full_path):
+        raise HTTPException(status_code=403, detail="Forbidden by RBAC policy")
     
     # Check rate limiting per service
     rate_limit_key = f"rate_limit:{service}:{user.get('user_id', 'anonymous')}"

@@ -1,0 +1,31 @@
+# API Gateway RBAC Configuration
+
+roles:
+  admin:
+    description: Full access to all endpoints
+  user:
+    description: Standard access to read and limited write operations
+
+permissions:
+  ingest:
+    GET:
+      paths:
+        - "processing/jobs"
+        - "processing/stats"
+      roles: ["admin", "user"]
+    POST:
+      paths:
+        - "processing/start"
+        - "upload"
+        - "processing/rollback/*"
+      roles: ["admin"]
+  metrics:
+    GET:
+      paths:
+        - "api/metrics/**"
+      roles: ["admin", "user"]
+  users:
+    GET:
+      paths:
+        - "users/**"
+      roles: ["admin"]

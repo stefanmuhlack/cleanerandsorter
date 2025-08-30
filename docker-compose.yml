@@ -215,6 +215,7 @@ services:
       - ./config/production.env:/app/.env:ro
       - ./config/security-hardening.yml:/app/security.yml:ro
       - ./config/performance-tuning.yml:/app/performance.yml:ro
+      - ./config:/app/config:ro
     depends_on:
       - redis
       - ingest-service

@@ -157,7 +157,7 @@ export const rollbackJob = createAsyncThunk(
 export const fetchProcessingJobs = createAsyncThunk(
   'fileProcessing/fetchJobs',
   async () => {
-    const response = await fetch('/processing/jobs');
+    const response = await fetch('/api/ingest/processing/jobs');
     
     if (!response.ok) {
       throw new Error('Failed to fetch jobs');
@@ -170,7 +170,7 @@ export const fetchProcessingJobs = createAsyncThunk(
 export const fetchProcessingStats = createAsyncThunk(
   'fileProcessing/fetchStats',
   async () => {
-    const response = await fetch('/processing/stats');
+    const response = await fetch('/api/ingest/processing/stats');
     
     if (!response.ok) {
       throw new Error('Failed to fetch stats');

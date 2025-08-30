@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY main.py .
 COPY config_loader.py .
+COPY rbac_loader.py .
 
 # Copy configuration files
 COPY config/ ./config/

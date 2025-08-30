@@ -374,7 +374,7 @@ const FileProcessing: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {jobs.map((job) => (
+                {(Array.isArray(jobs) ? jobs : []).map((job: any) => (
                   <TableRow key={job.id}>
                     <TableCell>{job.id}</TableCell>
                     <TableCell>

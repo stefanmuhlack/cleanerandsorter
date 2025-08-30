@@ -54,10 +54,14 @@ class FileController:
         service: FileProcessingService
     ) -> List[FileEntity]:
         """List files with optional status filter."""
-        if status:
-            return await service.file_repo.get_by_status(status)
-        else:
-            return await service.file_repo.get_pending_files()
+        try:
+            if status:
+                return await service.file_repo.get_by_status(status)
+            else:
+                return await service.file_repo.get_pending_files()
+        except Exception as e:
+            logger.error(f"Error listing files: {e}")
+            return []
 
 
 class SortingRuleController:
@@ -127,7 +131,11 @@ class StatisticsController:
         service: StatisticsService
     ) -> ProcessingStatistics:
         """Get processing statistics."""
-        return await service.get_processing_statistics()
+        try:
+            return await service.get_processing_statistics()
+        except Exception as e:
+            logger.error(f"Error getting statistics: {e}")
+            return ProcessingStatistics()
     
     async def get_recent_batches(
         self,
@@ -135,4 +143,8 @@ class StatisticsController:
         service: StatisticsService
     ) -> List[ProcessingBatch]:
         """Get recent processing batches."""
-        return await service.get_recent_batches(limit) 
+        try:
+            return await service.get_recent_batches(limit)
+        except Exception as e:
+            logger.error(f"Error getting recent batches: {e}")
+            return [] 

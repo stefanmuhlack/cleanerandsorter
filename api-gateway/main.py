@@ -99,101 +99,36 @@ JWT_SECRET = "your-super-secret-jwt-key-change-in-production"
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION = 24 * 60 * 60  # 24 hours
 
+# Health check cache TTL
+health_cache_ttl = 30  # seconds
+
+# Create FastAPI app
 app = FastAPI(
     title="CAS API Gateway",
-    description="Central API Gateway for CAS Document Management Platform",
+    description="Central API Gateway for CAS Platform",
     version="1.0.0"
 )
 
 # Add middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
 
-# Add rate limiting
-app.state.limiter = limiter
+# Add rate limiting exception handler
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Health check cache
-health_cache: Dict[str, Dict[str, Any]] = {}
-health_cache_ttl = 30  # seconds
-
-
-async def get_redis() -> redis.Redis:
-    """Get Redis client."""
+# Redis connection
+async def get_redis():
     global redis_client
     if redis_client is None:
-        redis_client = redis.from_url("redis://redis:6379", decode_responses=True)
+        redis_client = redis.Redis(host='cas_redis', port=6379, db=0, decode_responses=True)
     return redis_client
 
-
-async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
-    """Verify JWT token and return user information."""
-    try:
-        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        return payload
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-
-async def get_user_info(request: Request) -> Dict[str, Any]:
-    """Get user information from token or return anonymous user."""
-    try:
-        auth_header = request.headers.get('Authorization')
-        if auth_header and auth_header.startswith('Bearer '):
-            token = auth_header.split(' ')[1]
-            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-            return payload
-        else:
-            # Return anonymous user for requests without token
-            return {
-                'user_id': 'anonymous',
-                'username': 'anonymous',
-                'role': 'user'
-            }
-    except Exception:
-        # Return anonymous user for invalid tokens
-        return {
-            'user_id': 'anonymous',
-            'username': 'anonymous',
-            'role': 'user'
-        }
-
-
-async def check_service_health(service_name: str, service_config: Dict[str, Any]) -> Dict[str, Any]:
-    """Check health of a specific service."""
-    try:
-        async with httpx.AsyncClient(timeout=service_config['timeout']) as client:
-            response = await client.get(f"{service_config['url']}{service_config['health_check']}")
-            return {
-                'status': 'healthy' if response.status_code == 200 else 'unhealthy',
-                'response_time': response.elapsed.total_seconds(),
-                'status_code': response.status_code,
-                'last_check': datetime.utcnow().isoformat()
-            }
-    except Exception as e:
-        logger.error(f"Health check failed for {service_name}: {e}")
-        return {
-            'status': 'unhealthy',
-            'error': str(e),
-            'last_check': datetime.utcnow().isoformat()
-        }
-
-
+# Startup and shutdown events
 @app.on_event("startup")
 async def startup_event():
-    """Initialize services on startup."""
-    logger.info("API Gateway starting up...")
+    """Initialize Redis connection on startup."""
     await get_redis()
-
+    logger.info("API Gateway started successfully")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -203,7 +138,67 @@ async def shutdown_event():
         await redis_client.close()
     logger.info("API Gateway shutting down...")
 
+# Health check functions
+async def check_service_health(service_name: str, service_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Check health of a specific service."""
+    start_time = time.time()
+    
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{service_config['url']}{service_config['health_check']}")
+            
+            duration = time.time() - start_time
+            
+            if response.status_code == 200:
+                return {
+                    "status": "healthy",
+                    "response_time": round(duration, 3),
+                    "status_code": response.status_code,
+                    "last_check": datetime.utcnow().isoformat()
+                }
+            else:
+                return {
+                    "status": "unhealthy",
+                    "error": f"HTTP {response.status_code}",
+                    "response_time": round(duration, 3),
+                    "status_code": response.status_code,
+                    "last_check": datetime.utcnow().isoformat()
+                }
+                
+    except httpx.TimeoutException:
+        return {
+            "status": "unhealthy",
+            "error": "Timeout",
+            "response_time": round(time.time() - start_time, 3),
+            "last_check": datetime.utcnow().isoformat()
+        }
+    except httpx.ConnectError:
+        return {
+            "status": "unhealthy",
+            "error": "Connection refused",
+            "response_time": round(time.time() - start_time, 3),
+            "last_check": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "response_time": round(time.time() - start_time, 3),
+            "last_check": datetime.utcnow().isoformat()
+        }
 
+# Authentication middleware
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
+    """Validate JWT token and return user information."""
+    try:
+        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+# Gateway middleware
 @app.middleware("http")
 async def gateway_middleware(request: Request, call_next):
     """Main gateway middleware for monitoring and routing."""
@@ -234,7 +229,7 @@ async def gateway_middleware(request: Request, call_next):
     
     return response
 
-
+# Health endpoints
 @app.get("/health")
 async def gateway_health():
     """Gateway health check endpoint."""
@@ -244,7 +239,6 @@ async def gateway_health():
         "timestamp": datetime.utcnow().isoformat(),
         "version": "1.0.0"
     }
-
 
 @app.get("/health/all")
 async def all_services_health():
@@ -284,7 +278,7 @@ async def all_services_health():
     
     return health_results
 
-
+# Metrics endpoint
 @app.get("/metrics")
 async def metrics():
     """Prometheus metrics endpoint."""
@@ -293,14 +287,100 @@ async def metrics():
         media_type=CONTENT_TYPE_LATEST
     )
 
+# Specific API routes (must come before generic service routing)
+@app.get("/api/metrics/business")
+async def get_business_metrics():
+    """Get business metrics - MOCK IMPLEMENTATION."""
+    return {
+        "total_revenue": 1250000,
+        "monthly_growth": 12.5,
+        "active_users": 1250,
+        "conversion_rate": 3.2,
+        "average_order_value": 450,
+        "customer_satisfaction": 4.8,
+        "top_products": [
+            {"name": "Premium Package", "sales": 45000},
+            {"name": "Standard Package", "sales": 32000},
+            {"name": "Basic Package", "sales": 28000}
+        ],
+        "revenue_by_month": [
+            {"month": "Jan", "revenue": 95000},
+            {"month": "Feb", "revenue": 105000},
+            {"month": "Mar", "revenue": 115000},
+            {"month": "Apr", "revenue": 125000}
+        ]
+    }
 
+@app.get("/api/audit/logs")
+async def get_audit_logs(limit: int = 50):
+    """Get audit logs - MOCK IMPLEMENTATION."""
+    return {
+        "logs": [
+            {
+                "id": "1",
+                "timestamp": "2024-01-15T10:30:00Z",
+                "user": "admin",
+                "action": "file_upload",
+                "details": "Uploaded invoice_2024_001.pdf",
+                "ip_address": "192.168.1.100",
+                "status": "success"
+            },
+            {
+                "id": "2",
+                "timestamp": "2024-01-15T10:25:00Z",
+                "user": "user123",
+                "action": "login",
+                "details": "User logged in successfully",
+                "ip_address": "192.168.1.101",
+                "status": "success"
+            },
+            {
+                "id": "3",
+                "timestamp": "2024-01-15T10:20:00Z",
+                "user": "admin",
+                "action": "system_config",
+                "details": "Updated processing configuration",
+                "ip_address": "192.168.1.100",
+                "status": "success"
+            }
+        ],
+        "total": 3,
+        "limit": limit
+    }
+
+@app.get("/users/")
+async def get_users():
+    """Get users - MOCK IMPLEMENTATION."""
+    return {
+        "users": [
+            {
+                "id": "1",
+                "username": "admin",
+                "email": "admin@company.com",
+                "role": "admin",
+                "status": "active",
+                "created_at": "2024-01-01T00:00:00Z"
+            },
+            {
+                "id": "2",
+                "username": "user123",
+                "email": "user123@company.com",
+                "role": "user",
+                "status": "active",
+                "created_at": "2024-01-02T00:00:00Z"
+            }
+        ],
+        "total": 2
+    }
+
+# Generic service routing (with authentication)
 @app.api_route("/{service}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 @limiter.limit("100/minute")
 async def proxy_request(
     request: Request,
     service: str,
     path: str,
-    user: Dict[str, Any] = Depends(get_user_info)
+    user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Proxy requests to appropriate services."""
     # Check if this is a direct route mapping
@@ -367,7 +447,7 @@ async def proxy_request(
         logger.error(f"Error proxying request to {service}: {e}")
         raise HTTPException(status_code=500, detail="Internal gateway error")
 
-
+# Authentication endpoints
 @app.post("/auth/login")
 async def login(username: str, password: str):
     """Authenticate user and return JWT token."""
@@ -384,7 +464,7 @@ async def login(username: str, password: str):
     else:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-
+# Service information
 @app.get("/services")
 async def list_services():
     """List all available services."""
@@ -399,7 +479,6 @@ async def list_services():
             for name, config in SERVICES.items()
         }
     }
-
 
 if __name__ == "__main__":
     import uvicorn

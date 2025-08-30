@@ -233,7 +233,9 @@ const fileProcessingSlice = createSlice({
       })
       .addCase(uploadFiles.fulfilled, (state, action) => {
         state.loading = false;
-        state.jobs.push(...action.payload.jobs);
+        if (action.payload.jobs) {
+          state.jobs.push(...action.payload.jobs);
+        }
       })
       .addCase(uploadFiles.rejected, (state, action) => {
         state.loading = false;
@@ -247,7 +249,9 @@ const fileProcessingSlice = createSlice({
       })
       .addCase(processFiles.fulfilled, (state, action) => {
         state.processing = false;
-        state.jobs = action.payload.jobs;
+        if (action.payload.jobs) {
+          state.jobs = action.payload.jobs;
+        }
       })
       .addCase(processFiles.rejected, (state, action) => {
         state.processing = false;
@@ -289,7 +293,7 @@ const fileProcessingSlice = createSlice({
       })
       .addCase(fetchProcessingJobs.fulfilled, (state, action) => {
         state.loading = false;
-        state.jobs = action.payload;
+        state.jobs = action.payload.jobs || [];
       })
       .addCase(fetchProcessingJobs.rejected, (state, action) => {
         state.loading = false;

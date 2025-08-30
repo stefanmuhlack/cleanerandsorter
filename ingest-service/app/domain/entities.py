@@ -41,6 +41,18 @@ class FileMetadata:
     checksum: str
     tags: List[str] = field(default_factory=list)
     custom_fields: Dict[str, Any] = field(default_factory=dict)
+    
+    def dict(self):
+        """Convert to dictionary."""
+        return {
+            "size": self.size,
+            "mime_type": self.mime_type,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "modified_at": self.modified_at.isoformat() if self.modified_at else None,
+            "checksum": self.checksum,
+            "tags": self.tags,
+            "custom_fields": self.custom_fields
+        }
 
 @dataclass
 class FileEntity:
@@ -52,8 +64,51 @@ class FileEntity:
     file_type: FileType = FileType.UNKNOWN
     status: ProcessingStatus = ProcessingStatus.PENDING
     metadata: FileMetadata = field(default_factory=FileMetadata)
+    sorting_rule: Optional['SortingRule'] = None
+    bucket_name: Optional[str] = None
+    object_key: Optional[str] = None
+    processing_errors: List[str] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
+    
+    def dict(self):
+        """Convert to dictionary."""
+        return {
+            "id": str(self.id) if self.id else None,
+            "filename": self.filename,
+            "original_path": self.original_path,
+            "target_path": self.target_path,
+            "file_type": self.file_type.value if self.file_type else None,
+            "status": self.status.value if self.status else None,
+            "metadata": self.metadata.dict() if self.metadata else None,
+            "sorting_rule": self.sorting_rule.dict() if self.sorting_rule else None,
+            "bucket_name": self.bucket_name,
+            "object_key": self.object_key,
+            "processing_errors": self.processing_errors,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
+    
+    def assign_sorting_rule(self, rule: 'SortingRule'):
+        """Assign a sorting rule to this file."""
+        self.sorting_rule = rule
+    
+    def set_target_path(self, target_path: str):
+        """Set the target path for this file."""
+        self.target_path = target_path
+    
+    def set_storage_location(self, bucket: str, key: str):
+        """Set the storage location for this file."""
+        self.bucket_name = bucket
+        self.object_key = key
+    
+    def update_status(self, status: ProcessingStatus, error_message: str = None):
+        """Update the processing status."""
+        self.status = status
+        if error_message:
+            if not hasattr(self, 'processing_errors'):
+                self.processing_errors = []
+            self.processing_errors.append(error_message)
 
 @dataclass
 class SortingRule:
@@ -70,6 +125,23 @@ class SortingRule:
     max_size: Optional[int] = None
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
+    
+    def dict(self):
+        """Convert to dictionary."""
+        return {
+            "id": str(self.id) if self.id else None,
+            "name": self.name,
+            "description": self.description,
+            "priority": self.priority,
+            "enabled": self.enabled,
+            "keywords": self.keywords,
+            "file_types": self.file_types,
+            "target_path": self.target_path,
+            "min_size": self.min_size,
+            "max_size": self.max_size,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
 
 @dataclass
 class ProcessingBatch:
@@ -82,17 +154,44 @@ class ProcessingBatch:
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     created_at: datetime = field(default_factory=datetime.now)
+    
+    def dict(self):
+        """Convert to dictionary."""
+        return {
+            "id": str(self.id) if self.id else None,
+            "name": self.name,
+            "description": self.description,
+            "files": [f.dict() for f in self.files],
+            "status": self.status.value if self.status else None,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+    
+    def add_file(self, file_entity: FileEntity):
+        """Add a file to this batch."""
+        self.files.append(file_entity)
 
 @dataclass
 class ProcessingStatistics:
     """Processing statistics."""
-    total_files: int = 0
-    processed_files: int = 0
+    total_files_processed: int = 0
+    successful_files: int = 0
     failed_files: int = 0
-    duplicate_files: int = 0
-    total_size: int = 0
-    processing_time: float = 0.0
-    average_processing_time: float = 0.0
+    skipped_files: int = 0
+    files_by_status: Dict[str, int] = field(default_factory=dict)
+    files_by_type: Dict[str, int] = field(default_factory=dict)
+    
+    def dict(self):
+        """Convert to dictionary."""
+        return {
+            "total_files_processed": self.total_files_processed,
+            "successful_files": self.successful_files,
+            "failed_files": self.failed_files,
+            "skipped_files": self.skipped_files,
+            "files_by_status": self.files_by_status,
+            "files_by_type": self.files_by_type
+        }
 
 # New entities for enhanced document processing
 

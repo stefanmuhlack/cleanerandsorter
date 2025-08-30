@@ -127,10 +127,13 @@ class FileProcessingService:
         # This would integrate with actual metadata extraction libraries
         stat = file_path.stat()
         return FileMetadata(
-            file_size=stat.st_size,
+            size=stat.st_size,
             mime_type="application/octet-stream",  # Would be determined by magic
-            created_date=datetime.fromtimestamp(stat.st_ctime),
-            modified_date=datetime.fromtimestamp(stat.st_mtime)
+            created_at=datetime.fromtimestamp(stat.st_ctime),
+            modified_at=datetime.fromtimestamp(stat.st_mtime),
+            checksum="",  # Would be calculated
+            tags=[],
+            custom_fields={}
         )
     
     def _determine_file_type(self, mime_type: str) -> FileType:
@@ -152,7 +155,7 @@ class FileProcessingService:
     
     async def _find_matching_rule(self, file_entity: FileEntity) -> Optional[SortingRule]:
         """Find a matching sorting rule for the file."""
-        rules = await self.rule_repo.get_enabled_rules()
+        rules = await self.rule_repo.get_enabled()
         
         # Sort by priority (lower number = higher priority)
         rules.sort(key=lambda r: r.priority)
@@ -170,9 +173,9 @@ class FileProcessingService:
             return False
         
         # Check file size
-        if rule.min_file_size and file_entity.metadata.file_size < rule.min_file_size:
+        if rule.min_size and file_entity.metadata.size < rule.min_size:
             return False
-        if rule.max_file_size and file_entity.metadata.file_size > rule.max_file_size:
+        if rule.max_size and file_entity.metadata.size > rule.max_size:
             return False
         
         # Check keywords in filename
@@ -190,11 +193,11 @@ class FileProcessingService:
         
         # Add year/month if specified in target path
         if "{year}" in rule.target_path:
-            year = file_entity.metadata.created_date.year if file_entity.metadata.created_date else datetime.now().year
+            year = file_entity.metadata.created_at.year if file_entity.metadata.created_at else datetime.now().year
             base_path = Path(str(base_path).replace("{year}", str(year)))
         
         if "{month}" in rule.target_path:
-            month = file_entity.metadata.created_date.month if file_entity.metadata.created_date else datetime.now().month
+            month = file_entity.metadata.created_at.month if file_entity.metadata.created_at else datetime.now().month
             base_path = Path(str(base_path).replace("{month}", f"{month:02d}"))
         
         return base_path / file_entity.filename
@@ -247,7 +250,7 @@ class SortingRuleService:
     
     async def get_enabled_rules(self) -> List[SortingRule]:
         """Get all enabled sorting rules."""
-        return await self.rule_repo.get_enabled_rules()
+        return await self.rule_repo.get_enabled()
 
 
 class StatisticsService:
@@ -259,15 +262,28 @@ class StatisticsService:
     
     async def get_processing_statistics(self) -> ProcessingStatistics:
         """Get comprehensive processing statistics."""
-        return await self.file_repo.get_statistics()
+        try:
+            return await self.file_repo.get_statistics()
+        except Exception as e:
+            logger.error(f"Error getting processing statistics: {e}")
+            # Return empty statistics on error
+            return ProcessingStatistics()
     
     async def get_recent_batches(self, limit: int = 10) -> List[ProcessingBatch]:
         """Get recent processing batches."""
-        return await self.batch_repo.get_recent_batches(limit)
+        try:
+            return await self.batch_repo.get_recent_batches(limit)
+        except Exception as e:
+            logger.error(f"Error getting recent batches: {e}")
+            return []
     
     async def get_files_by_status(self, status: ProcessingStatus) -> List[FileEntity]:
         """Get files by processing status."""
-        return await self.file_repo.get_by_status(status.value) 
+        try:
+            return await self.file_repo.get_by_status(status.value)
+        except Exception as e:
+            logger.error(f"Error getting files by status: {e}")
+            return [] 
 
 
 @dataclass

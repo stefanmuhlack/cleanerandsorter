@@ -71,11 +71,22 @@ class PostgresFileRepository(FileRepository):
                 return self._model_to_entity(file_model)
             return None
     
-    async def get_by_status(self, status: ProcessingStatus) -> List[FileEntity]:
+    async def get_by_status(self, status: str) -> List[FileEntity]:
         """Get files by processing status."""
         async with self.session_factory() as session:
+            # Convert string status to enum if needed
+            if isinstance(status, str):
+                try:
+                    status_enum = ProcessingStatus(status)
+                    status_value = status_enum.value
+                except ValueError:
+                    # If status is not a valid enum value, return empty list
+                    return []
+            else:
+                status_value = status.value
+            
             result = await session.execute(
-                select(FileModel).where(FileModel.status == status.value)
+                select(FileModel).where(FileModel.status == status_value)
             )
             file_models = result.scalars().all()
             
@@ -83,13 +94,27 @@ class PostgresFileRepository(FileRepository):
     
     async def get_pending_files(self) -> List[FileEntity]:
         """Get all pending files."""
-        return await self.get_by_status(ProcessingStatus.PENDING)
+        try:
+            return await self.get_by_status(ProcessingStatus.PENDING.value)
+        except Exception as e:
+            logger.error(f"Error getting pending files: {e}")
+            return []
     
     async def update_status(self, file_id: str, status: ProcessingStatus) -> bool:
         """Update the status of a file."""
         async with self.session_factory() as session:
+            # Convert string status to enum if needed
+            if isinstance(status, str):
+                try:
+                    status_enum = ProcessingStatus(status)
+                    status_value = status_enum.value
+                except ValueError:
+                    return False
+            else:
+                status_value = status.value
+            
             update_data = {
-                "status": status.value,
+                "status": status_value,
                 "updated_at": datetime.utcnow()
             }
             
@@ -113,35 +138,40 @@ class PostgresFileRepository(FileRepository):
     
     async def get_statistics(self) -> ProcessingStatistics:
         """Get processing statistics."""
-        async with self.session_factory() as session:
-            # Get total files
-            total_result = await session.execute(select(FileModel.id))
-            total_files = len(total_result.scalars().all())
-            
-            # Get files by status
-            status_result = await session.execute(
-                select(FileModel.status, FileModel.id)
-            )
-            status_counts = {}
-            for status, _ in status_result:
-                status_counts[status] = status_counts.get(status, 0) + 1
-            
-            # Get files by type
-            type_result = await session.execute(
-                select(FileModel.file_type, FileModel.id)
-            )
-            type_counts = {}
-            for file_type, _ in type_result:
-                type_counts[file_type] = type_counts.get(file_type, 0) + 1
-            
-            return ProcessingStatistics(
-                total_files_processed=total_files,
-                successful_files=status_counts.get(ProcessingStatus.COMPLETED.value, 0),
-                failed_files=status_counts.get(ProcessingStatus.FAILED.value, 0),
-                skipped_files=status_counts.get(ProcessingStatus.SKIPPED.value, 0),
-                files_by_status=status_counts,
-                files_by_type=type_counts
-            )
+        try:
+            async with self.session_factory() as session:
+                # Get total files
+                total_result = await session.execute(select(FileModel.id))
+                total_files = len(total_result.scalars().all())
+                
+                # Get files by status
+                status_result = await session.execute(
+                    select(FileModel.status, FileModel.id)
+                )
+                status_counts = {}
+                for status, _ in status_result:
+                    status_counts[status] = status_counts.get(status, 0) + 1
+                
+                # Get files by type
+                type_result = await session.execute(
+                    select(FileModel.file_type, FileModel.id)
+                )
+                type_counts = {}
+                for file_type, _ in type_result:
+                    type_counts[file_type] = type_counts.get(file_type, 0) + 1
+                
+                return ProcessingStatistics(
+                    total_files_processed=total_files,
+                    successful_files=status_counts.get(ProcessingStatus.COMPLETED.value, 0),
+                    failed_files=status_counts.get(ProcessingStatus.FAILED.value, 0),
+                    skipped_files=status_counts.get(ProcessingStatus.SKIPPED.value, 0),
+                    files_by_status=status_counts,
+                    files_by_type=type_counts
+                )
+        except Exception as e:
+            logger.error(f"Error getting statistics: {e}")
+            # Return empty statistics on error
+            return ProcessingStatistics()
     
     def _model_to_entity(self, model: FileModel) -> FileEntity:
         """Convert database model to domain entity."""

@@ -63,9 +63,9 @@ const FileProcessing: React.FC = () => {
   const [processingConfig, setProcessingConfig] = useState({
     enableDuplicateDetection: true,
     enableLLMClassification: true,
-    enableBackup: true,
-    maxWorkers: 4,
-    batchSize: 10
+    enableRollback: true,
+    maxConcurrentJobs: 4,
+    targetDirectory: '/mnt/nas/documents'
   });
   const [rollbackDialog, setRollbackDialog] = useState<{
     open: boolean;
@@ -180,12 +180,12 @@ const FileProcessing: React.FC = () => {
                   }))}
                 />
                 <Chip 
-                  label="Backup Before Processing" 
-                  color={processingConfig.enableBackup ? 'success' : 'default'}
+                  label="Enable Rollback" 
+                  color={processingConfig.enableRollback ? 'success' : 'default'}
                   icon={<Storage />}
                   onClick={() => setProcessingConfig(prev => ({
                     ...prev,
-                    enableBackup: !prev.enableBackup
+                    enableRollback: !prev.enableRollback
                   }))}
                 />
               </Box>
@@ -196,32 +196,21 @@ const FileProcessing: React.FC = () => {
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <Box>
-                  <Typography variant="body2">Max Workers: {processingConfig.maxWorkers}</Typography>
+                  <Typography variant="body2">Max Concurrent Jobs: {processingConfig.maxConcurrentJobs}</Typography>
                   <input
                     type="range"
                     min="1"
                     max="8"
-                    value={processingConfig.maxWorkers}
+                    value={processingConfig.maxConcurrentJobs}
                     onChange={(e) => setProcessingConfig(prev => ({
                       ...prev,
-                      maxWorkers: parseInt(e.target.value)
+                      maxConcurrentJobs: parseInt(e.target.value)
                     }))}
                     style={{ width: '100%' }}
                   />
                 </Box>
                 <Box>
-                  <Typography variant="body2">Batch Size: {processingConfig.batchSize}</Typography>
-                  <input
-                    type="range"
-                    min="5"
-                    max="50"
-                    value={processingConfig.batchSize}
-                    onChange={(e) => setProcessingConfig(prev => ({
-                      ...prev,
-                      batchSize: parseInt(e.target.value)
-                    }))}
-                    style={{ width: '100%' }}
-                  />
+                  <Typography variant="body2">Target Directory: {processingConfig.targetDirectory}</Typography>
                 </Box>
               </Box>
             </Grid>

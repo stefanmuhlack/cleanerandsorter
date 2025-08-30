@@ -8,6 +8,7 @@ import { store } from './store/index';
 // Import components
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
+import ControlPanel from './pages/ControlPanel';
 import FileProcessing from './pages/FileProcessing';
 import SortingRules from './pages/SortingRules';
 import Statistics from './pages/Statistics';
@@ -58,6 +59,7 @@ function App() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/control-panel" element={<ControlPanel />} />
               <Route path="/file-processing" element={<FileProcessing />} />
               <Route path="/sorting-rules" element={<SortingRules />} />
               <Route path="/statistics" element={<Statistics />} />

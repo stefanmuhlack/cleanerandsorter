@@ -38,7 +38,8 @@ import {
   Refresh as RefreshIcon,
   CheckCircle as CheckCircleIcon,
   Warning as WarningIcon,
-  Error as ErrorIcon
+  Error as ErrorIcon,
+  ControlCamera as ControlPanelIcon,
 } from '@mui/icons-material';
 import { useLocation, useNavigate } from 'react-router-dom';
 
@@ -59,6 +60,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+    { text: 'Control Panel', icon: <ControlPanelIcon />, path: '/control-panel' },
     { text: 'Dateiverarbeitung', icon: <UploadIcon />, path: '/file-processing' },
     { text: 'Sortierregeln', icon: <RuleIcon />, path: '/sorting-rules' },
     { text: 'Statistiken', icon: <AnalyticsIcon />, path: '/statistics' },

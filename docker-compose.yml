@@ -194,6 +194,43 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: cas_api_gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - RATE_LIMIT_PER_MINUTE=1000
+      - RATE_LIMIT_BURST=200
+      - CORS_ORIGINS=https://admin.company.com,https://api.company.com
+      - TRUSTED_HOSTS=admin.company.com,api.company.com
+      - LOG_LEVEL=INFO
+      - METRICS_ENABLED=true
+    volumes:
+      - ./config/production.env:/app/.env:ro
+      - ./config/security-hardening.yml:/app/security.yml:ro
+      - ./config/performance-tuning.yml:/app/performance.yml:ro
+    depends_on:
+      - redis
+      - ingest-service
+      - email-processor
+      - footage-service
+      - llm-manager
+      - otrs-integration
+      - backup-service
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
   # Admin Dashboard
   admin-dashboard:
     build:
@@ -203,12 +240,12 @@ services:
     ports:
       - "3001:3000"
     environment:
-      - REACT_APP_API_URL=http://ingest-service:8000
+      - REACT_APP_API_URL=http://api-gateway:8000
       - REACT_APP_MINIO_ENDPOINT=http://minio:9000
       - REACT_APP_ELASTICSEARCH_URL=http://elasticsearch:9200
       - REACT_APP_PAPERLESS_URL=http://paperless:8000
     depends_on:
-      - ingest-service
+      - api-gateway
       - paperless
 
   # Ollama LLM Service

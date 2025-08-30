@@ -1,0 +1,335 @@
+# CAS Platform Security Hardening Configuration
+# ============================================
+
+# SSL/TLS Configuration
+ssl:
+  enabled: true
+  certificate_path: /etc/ssl/certs/cas-platform.crt
+  private_key_path: /etc/ssl/private/cas-platform.key
+  ca_certificate_path: /etc/ssl/certs/ca-bundle.crt
+  protocols:
+    - TLSv1.3
+    - TLSv1.2
+  ciphers:
+    - ECDHE-ECDSA-AES256-GCM-SHA384
+    - ECDHE-RSA-AES256-GCM-SHA384
+    - ECDHE-ECDSA-CHACHA20-POLY1305
+    - ECDHE-RSA-CHACHA20-POLY1305
+  hsts:
+    enabled: true
+    max_age: 31536000
+    include_subdomains: true
+    preload: true
+
+# Authentication Configuration
+authentication:
+  jwt:
+    secret: ${JWT_SECRET}
+    algorithm: HS256
+    expiration: 86400  # 24 hours
+    refresh_expiration: 604800  # 7 days
+    issuer: cas-platform
+    audience: cas-users
+  
+  password_policy:
+    min_length: 12
+    require_uppercase: true
+    require_lowercase: true
+    require_numbers: true
+    require_special_chars: true
+    max_age_days: 90
+    prevent_reuse: 5
+  
+  mfa:
+    enabled: true
+    methods:
+      - totp
+      - email
+    backup_codes: 10
+  
+  session:
+    max_concurrent_sessions: 3
+    idle_timeout: 1800  # 30 minutes
+    absolute_timeout: 86400  # 24 hours
+
+# Authorization Configuration
+authorization:
+  roles:
+    admin:
+      permissions:
+        - "*"
+      description: "Full system access"
+    
+    manager:
+      permissions:
+        - "files:read"
+        - "files:write"
+        - "files:delete"
+        - "rules:read"
+        - "rules:write"
+        - "statistics:read"
+        - "monitoring:read"
+      description: "Management access"
+    
+    user:
+      permissions:
+        - "files:read"
+        - "files:write"
+        - "statistics:read"
+      description: "Standard user access"
+    
+    viewer:
+      permissions:
+        - "files:read"
+        - "statistics:read"
+      description: "Read-only access"
+  
+  resource_permissions:
+    files:
+      - "read"
+      - "write"
+      - "delete"
+      - "download"
+      - "upload"
+    
+    rules:
+      - "read"
+      - "write"
+      - "delete"
+    
+    statistics:
+      - "read"
+      - "export"
+    
+    monitoring:
+      - "read"
+      - "alerts"
+    
+    admin:
+      - "users"
+      - "system"
+      - "backup"
+      - "logs"
+
+# Network Security
+network:
+  firewall:
+    allowed_ips:
+      - "192.168.1.0/24"
+      - "10.0.0.0/8"
+    blocked_ips: []
+    rate_limiting:
+      enabled: true
+      requests_per_minute: 100
+      burst_size: 20
+  
+  cors:
+    allowed_origins:
+      - "https://admin.company.com"
+      - "https://api.company.com"
+    allowed_methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "OPTIONS"
+    allowed_headers:
+      - "Authorization"
+      - "Content-Type"
+      - "X-Requested-With"
+    allow_credentials: true
+    max_age: 3600
+
+# Data Protection
+data_protection:
+  encryption:
+    at_rest:
+      enabled: true
+      algorithm: AES-256-GCM
+      key_rotation_days: 90
+    
+    in_transit:
+      enabled: true
+      protocols:
+        - TLSv1.3
+        - TLSv1.2
+  
+  data_classification:
+    public:
+      - "public_documents"
+      - "marketing_materials"
+    
+    internal:
+      - "internal_documents"
+      - "project_files"
+    
+    confidential:
+      - "financial_documents"
+      - "hr_documents"
+      - "legal_documents"
+    
+    restricted:
+      - "trade_secrets"
+      - "personal_data"
+      - "health_records"
+  
+  retention_policy:
+    public: 365  # 1 year
+    internal: 1825  # 5 years
+    confidential: 2555  # 7 years
+    restricted: 3650  # 10 years
+
+# Audit Logging
+audit:
+  enabled: true
+  level: INFO
+  format: json
+  destination: file
+  file_path: /var/log/cas-audit.log
+  max_size: 100MB
+  max_files: 10
+  
+  events:
+    - "authentication"
+    - "authorization"
+    - "data_access"
+    - "data_modification"
+    - "system_configuration"
+    - "backup_operations"
+  
+  sensitive_fields:
+    - "password"
+    - "token"
+    - "api_key"
+    - "private_key"
+
+# API Security
+api_security:
+  rate_limiting:
+    enabled: true
+    default_limit: 100
+    burst_limit: 20
+    window_size: 60
+  
+  input_validation:
+    enabled: true
+    max_file_size: 100MB
+    allowed_file_types:
+      - "pdf"
+      - "doc"
+      - "docx"
+      - "xls"
+      - "xlsx"
+      - "jpg"
+      - "png"
+      - "mp4"
+      - "mov"
+    block_suspicious_content: true
+  
+  output_encoding:
+    enabled: true
+    html_encoding: true
+    sql_encoding: true
+    url_encoding: true
+
+# Container Security
+container_security:
+  run_as_non_root: true
+  read_only_root_filesystem: true
+  drop_capabilities:
+    - "ALL"
+  add_capabilities: []
+  
+  seccomp_profile: "runtime/default"
+  apparmor_profile: "unconfined"
+  
+  resource_limits:
+    cpu: "2"
+    memory: "4Gi"
+    storage: "10Gi"
+  
+  health_checks:
+    enabled: true
+    interval: 30s
+    timeout: 10s
+    retries: 3
+
+# Backup Security
+backup_security:
+  encryption:
+    enabled: true
+    algorithm: AES-256-GCM
+    key_management: "aws-kms"  # or "local"
+  
+  access_control:
+    backup_operators:
+      - "admin"
+      - "backup-service"
+    
+    restore_operators:
+      - "admin"
+  
+  integrity_checks:
+    enabled: true
+    checksum_algorithm: "sha256"
+    signature_verification: true
+
+# Monitoring Security
+monitoring_security:
+  metrics_authentication:
+    enabled: true
+    basic_auth: true
+    bearer_token: true
+  
+  alert_encryption:
+    enabled: true
+    notification_encryption: true
+  
+  access_logs:
+    enabled: true
+    log_sensitive_operations: true
+
+# Compliance
+compliance:
+  gdpr:
+    enabled: true
+    data_subject_rights: true
+    data_portability: true
+    right_to_be_forgotten: true
+  
+  sox:
+    enabled: true
+    financial_data_protection: true
+    audit_trail: true
+  
+  hipaa:
+    enabled: false  # Enable if handling health data
+    phi_protection: false
+    access_logging: false
+
+# Incident Response
+incident_response:
+  automated_response:
+    enabled: true
+    actions:
+      - "block_ip"
+      - "disable_user"
+      - "send_alert"
+  
+  escalation:
+    levels:
+      - "low"
+      - "medium"
+      - "high"
+      - "critical"
+    
+    contacts:
+      low: "admin@company.com"
+      medium: "admin@company.com"
+      high: "admin@company.com,manager@company.com"
+      critical: "admin@company.com,manager@company.com,security@company.com"
+  
+  forensics:
+    enabled: true
+    evidence_collection: true
+    chain_of_custody: true

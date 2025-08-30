@@ -1,0 +1,287 @@
+# CAS Platform Alert Rules Configuration
+# =====================================
+
+groups:
+  - name: cas-platform-alerts
+    rules:
+      # Service Health Alerts
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: "{{ $labels.service }}"
+        annotations:
+          summary: "Service {{ $labels.service }} is down"
+          description: "Service {{ $labels.service }} has been down for more than 1 minute"
+          runbook_url: "https://company.com/runbooks/service-down"
+
+      # API Gateway Alerts
+      - alert: APIGatewayHighErrorRate
+        expr: rate(gateway_requests_total{status=~"5.."}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          service: api-gateway
+        annotations:
+          summary: "API Gateway high error rate"
+          description: "API Gateway is returning 5xx errors at rate {{ $value }} errors/second"
+
+      - alert: APIGatewayHighLatency
+        expr: histogram_quantile(0.95, rate(gateway_request_duration_seconds_bucket[5m])) > 2
+        for: 2m
+        labels:
+          severity: warning
+          service: api-gateway
+        annotations:
+          summary: "API Gateway high latency"
+          description: "95th percentile latency is {{ $value }}s"
+
+      # Database Alerts
+      - alert: DatabaseHighConnections
+        expr: pg_stat_database_numbackends > 80
+        for: 2m
+        labels:
+          severity: warning
+          service: postgres
+        annotations:
+          summary: "Database high connection count"
+          description: "Database has {{ $value }} active connections"
+
+      - alert: DatabaseSlowQueries
+        expr: rate(pg_stat_activity_max_tx_duration[5m]) > 30
+        for: 2m
+        labels:
+          severity: warning
+          service: postgres
+        annotations:
+          summary: "Database slow queries detected"
+          description: "Queries taking longer than 30 seconds detected"
+
+      # MinIO Alerts
+      - alert: MinIOHighErrorRate
+        expr: rate(minio_http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          service: minio
+        annotations:
+          summary: "MinIO high error rate"
+          description: "MinIO is returning 5xx errors at rate {{ $value }} errors/second"
+
+      - alert: MinIODiskSpaceLow
+        expr: minio_disk_used_percent > 85
+        for: 5m
+        labels:
+          severity: critical
+          service: minio
+        annotations:
+          summary: "MinIO disk space low"
+          description: "MinIO disk usage is {{ $value }}%"
+
+      # RabbitMQ Alerts
+      - alert: RabbitMQQueueDepthHigh
+        expr: rabbitmq_queue_messages > 1000
+        for: 2m
+        labels:
+          severity: warning
+          service: rabbitmq
+        annotations:
+          summary: "RabbitMQ queue depth high"
+          description: "Queue {{ $labels.queue }} has {{ $value }} messages"
+
+      - alert: RabbitMQConnectionLimit
+        expr: rabbitmq_connections > 100
+        for: 2m
+        labels:
+          severity: warning
+          service: rabbitmq
+        annotations:
+          summary: "RabbitMQ connection limit reached"
+          description: "RabbitMQ has {{ $value }} connections"
+
+      # Elasticsearch Alerts
+      - alert: ElasticsearchClusterRed
+        expr: elasticsearch_cluster_health_status == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: elasticsearch
+        annotations:
+          summary: "Elasticsearch cluster is red"
+          description: "Elasticsearch cluster health is red"
+
+      - alert: ElasticsearchClusterYellow
+        expr: elasticsearch_cluster_health_status == 1
+        for: 5m
+        labels:
+          severity: warning
+          service: elasticsearch
+        annotations:
+          summary: "Elasticsearch cluster is yellow"
+          description: "Elasticsearch cluster health is yellow"
+
+      # LLM Service Alerts
+      - alert: LLMServiceUnavailable
+        expr: up{service="llm-manager"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: llm-manager
+        annotations:
+          summary: "LLM service is down"
+          description: "LLM service is not responding"
+
+      - alert: OllamaModelNotAvailable
+        expr: ollama_model_status == 0
+        for: 2m
+        labels:
+          severity: warning
+          service: ollama
+        annotations:
+          summary: "Ollama model not available"
+          description: "Model {{ $labels.model }} is not available"
+
+      # Backup Alerts
+      - alert: BackupFailed
+        expr: backup_last_success_timestamp < (time() - 86400)
+        for: 1h
+        labels:
+          severity: critical
+          service: backup
+        annotations:
+          summary: "Backup failed"
+          description: "No successful backup in the last 24 hours"
+
+      - alert: BackupTooOld
+        expr: backup_last_success_timestamp < (time() - 172800)
+        for: 1h
+        labels:
+          severity: critical
+          service: backup
+        annotations:
+          summary: "Backup too old"
+          description: "No successful backup in the last 48 hours"
+
+      # System Resource Alerts
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}%"
+
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}%"
+
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_size_bytes - node_filesystem_free_bytes) / node_filesystem_size_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+          service: system
+        annotations:
+          summary: "Disk space low"
+          description: "Disk usage is {{ $value }}%"
+
+      # Network Alerts
+      - alert: HighNetworkErrors
+        expr: rate(node_network_receive_errs_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+          service: network
+        annotations:
+          summary: "High network errors"
+          description: "Network interface {{ $labels.device }} has {{ $value }} errors/second"
+
+      # Application Specific Alerts
+      - alert: IngestServiceQueueBacklog
+        expr: rabbitmq_queue_messages{queue="ingest_queue"} > 500
+        for: 5m
+        labels:
+          severity: warning
+          service: ingest-service
+        annotations:
+          summary: "Ingest service queue backlog"
+          description: "Ingest queue has {{ $value }} pending messages"
+
+      - alert: EmailProcessorBacklog
+        expr: rabbitmq_queue_messages{queue="email_queue"} > 100
+        for: 5m
+        labels:
+          severity: warning
+          service: email-processor
+        annotations:
+          summary: "Email processor backlog"
+          description: "Email queue has {{ $value }} pending messages"
+
+      - alert: OTRSIntegrationFailed
+        expr: otrs_api_requests_total{status=~"5.."} > 0
+        for: 2m
+        labels:
+          severity: warning
+          service: otrs-integration
+        annotations:
+          summary: "OTRS integration failed"
+          description: "OTRS API returned {{ $value }} 5xx errors"
+
+      # Security Alerts
+      - alert: TooManyFailedLogins
+        expr: rate(auth_failed_logins_total[5m]) > 10
+        for: 1m
+        labels:
+          severity: critical
+          service: security
+        annotations:
+          summary: "Too many failed login attempts"
+          description: "{{ $value }} failed login attempts per second"
+
+      - alert: UnauthorizedAccessAttempts
+        expr: rate(api_unauthorized_requests_total[5m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+          service: security
+        annotations:
+          summary: "Unauthorized access attempts"
+          description: "{{ $value }} unauthorized requests per second"
+
+# Notification Configuration
+global:
+  smtp_smarthost: 'mail.company.com:587'
+  smtp_from: 'alerts@company.com'
+  smtp_auth_username: 'alerts@company.com'
+  smtp_auth_password: 'your-smtp-password'
+
+route:
+  group_by: ['alertname', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'cas-team'
+
+receivers:
+  - name: 'cas-team'
+    email_configs:
+      - to: 'admin@company.com'
+        send_resolved: true
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+        channel: '#cas-alerts'
+        send_resolved: true
+        title: '{{ template "slack.cas.title" . }}'
+        text: '{{ template "slack.cas.text" . }}'
+
+templates:
+  - '/etc/alertmanager/template/*.tmpl'

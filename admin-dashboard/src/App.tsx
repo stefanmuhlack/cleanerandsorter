@@ -14,6 +14,7 @@ import Statistics from './pages/Statistics';
 import Settings from './pages/Settings';
 import EmailIntegration from './pages/EmailIntegration';
 import FootageManagement from './pages/FootageManagement';
+import Monitoring from './pages/Monitoring';
 
 const theme = createTheme({
   palette: {
@@ -62,6 +63,7 @@ function App() {
               <Route path="/statistics" element={<Statistics />} />
               <Route path="/email-integration" element={<EmailIntegration />} />
               <Route path="/footage-management" element={<FootageManagement />} />
+              <Route path="/monitoring" element={<Monitoring />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </Layout>

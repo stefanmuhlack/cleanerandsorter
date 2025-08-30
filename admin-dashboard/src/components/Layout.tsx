@@ -30,6 +30,7 @@ import {
   Settings as SettingsIcon,
   Email as EmailIcon,
   VideoLibrary as VideoIcon,
+  Monitor as MonitorIcon,
   Notifications as NotificationsIcon,
   AccountCircle as AccountCircleIcon,
   Search as SearchIcon,
@@ -63,6 +64,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { text: 'Statistiken', icon: <AnalyticsIcon />, path: '/statistics' },
     { text: 'E-Mail Integration', icon: <EmailIcon />, path: '/email-integration' },
     { text: 'Footage Management', icon: <VideoIcon />, path: '/footage-management' },
+    { text: 'Monitoring', icon: <MonitorIcon />, path: '/monitoring' },
     { text: 'Einstellungen', icon: <SettingsIcon />, path: '/settings' },
   ];
 

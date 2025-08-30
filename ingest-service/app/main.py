@@ -19,6 +19,7 @@ from app.application.controllers import (
     SortingRuleController,
     StatisticsController
 )
+from app.application.health import router as health_router
 from app.infrastructure.config import Settings
 from app.infrastructure.database import create_database_session
 from app.infrastructure.repositories.minio_repository import MinioObjectStorageRepository
@@ -190,15 +191,8 @@ async def metrics_middleware(request: Request, call_next):
     return response
 
 
-# Health check endpoint
-@app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "service": "cas-ingest-service",
-        "version": "1.0.0"
-    }
+# Include health check routes
+app.include_router(health_router, prefix="/api", tags=["health"])
 
 
 # Metrics endpoint

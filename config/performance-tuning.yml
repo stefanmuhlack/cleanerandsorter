@@ -1,0 +1,367 @@
+# CAS Platform Performance Tuning Configuration
+# ============================================
+
+# Load Balancing Configuration
+load_balancing:
+  enabled: true
+  algorithm: "least_connections"
+  health_check:
+    enabled: true
+    interval: 30s
+    timeout: 10s
+    unhealthy_threshold: 3
+    healthy_threshold: 2
+  
+  sticky_sessions:
+    enabled: true
+    cookie_name: "cas_session"
+    cookie_secure: true
+    cookie_httponly: true
+  
+  upstream_servers:
+    api_gateway:
+      - "api-gateway-1:8000"
+      - "api-gateway-2:8000"
+      - "api-gateway-3:8000"
+    
+    ingest_service:
+      - "ingest-service-1:8000"
+      - "ingest-service-2:8000"
+      - "ingest-service-3:8000"
+    
+    admin_dashboard:
+      - "admin-dashboard-1:3000"
+      - "admin-dashboard-2:3000"
+
+# Auto Scaling Configuration
+auto_scaling:
+  enabled: true
+  min_replicas: 2
+  max_replicas: 10
+  target_cpu_utilization: 70
+  target_memory_utilization: 80
+  
+  scale_up:
+    cooldown: 300s
+    stabilization_window: 60s
+  
+  scale_down:
+    cooldown: 600s
+    stabilization_window: 300s
+  
+  metrics:
+    - type: "Resource"
+      resource:
+        name: "cpu"
+        target:
+          type: "Utilization"
+          averageUtilization: 70
+    
+    - type: "Resource"
+      resource:
+        name: "memory"
+        target:
+          type: "Utilization"
+          averageUtilization: 80
+    
+    - type: "Object"
+      object:
+        metric:
+          name: "requests-per-second"
+        describedObject:
+          apiVersion: "autoscaling/v2"
+          kind: "Service"
+          name: "api-gateway"
+        target:
+          type: "AverageValue"
+          averageValue: 100
+
+# Database Performance Tuning
+database:
+  connection_pooling:
+    enabled: true
+    max_connections: 100
+    min_connections: 10
+    max_idle_time: 300s
+    max_lifetime: 3600s
+  
+  query_optimization:
+    enabled: true
+    slow_query_threshold: 1s
+    enable_query_cache: true
+    query_cache_size: 128MB
+  
+  indexing:
+    automatic_indexing: true
+    index_maintenance:
+      enabled: true
+      schedule: "0 2 * * *"  # Daily at 2 AM
+  
+  partitioning:
+    enabled: true
+    strategy: "range"
+    partition_by: "created_at"
+    partition_interval: "month"
+
+# Cache Configuration
+caching:
+  redis:
+    enabled: true
+    max_memory: "2GB"
+    max_memory_policy: "allkeys-lru"
+    persistence: "aof"
+    
+    clusters:
+      - host: "redis-1"
+        port: 6379
+        weight: 1
+      - host: "redis-2"
+        port: 6379
+        weight: 1
+      - host: "redis-3"
+        port: 6379
+        weight: 1
+  
+  application_cache:
+    file_cache:
+      enabled: true
+      max_size: "1GB"
+      ttl: 3600s
+    
+    metadata_cache:
+      enabled: true
+      max_size: "512MB"
+      ttl: 1800s
+    
+    session_cache:
+      enabled: true
+      max_size: "256MB"
+      ttl: 1800s
+
+# File Processing Optimization
+file_processing:
+  parallel_processing:
+    enabled: true
+    max_workers: 8
+    chunk_size: "10MB"
+  
+  streaming:
+    enabled: true
+    buffer_size: "1MB"
+    max_file_size: "1GB"
+  
+  compression:
+    enabled: true
+    algorithm: "gzip"
+    level: 6
+  
+  thumbnail_generation:
+    enabled: true
+    max_concurrent: 4
+    quality: 85
+    max_size: "800x600"
+
+# API Performance Tuning
+api_performance:
+  rate_limiting:
+    enabled: true
+    default_limit: 1000
+    burst_limit: 200
+    window_size: 60s
+  
+  response_caching:
+    enabled: true
+    cache_headers:
+      - "ETag"
+      - "Last-Modified"
+      - "Cache-Control"
+    
+    static_resources:
+      max_age: 86400  # 24 hours
+      immutable: true
+  
+  compression:
+    enabled: true
+    algorithms:
+      - "gzip"
+      - "br"
+    min_size: 1024
+  
+  pagination:
+    default_page_size: 50
+    max_page_size: 200
+    enable_cursor_pagination: true
+
+# Queue Management
+queue_management:
+  rabbitmq:
+    prefetch_count: 10
+    ack_mode: "manual"
+    
+    queues:
+      ingest_queue:
+        durable: true
+        max_priority: 10
+        max_length: 10000
+        dead_letter_exchange: "dlx"
+      
+      email_queue:
+        durable: true
+        max_priority: 5
+        max_length: 5000
+        dead_letter_exchange: "dlx"
+      
+      backup_queue:
+        durable: true
+        max_priority: 3
+        max_length: 1000
+        dead_letter_exchange: "dlx"
+  
+  dead_letter_queue:
+    enabled: true
+    max_retries: 3
+    retry_delay: 300s
+    max_age: 86400s
+
+# Storage Optimization
+storage_optimization:
+  minio:
+    erasure_coding:
+      enabled: true
+      parity_blocks: 2
+      data_blocks: 4
+    
+    compression:
+      enabled: true
+      algorithm: "lz4"
+    
+    lifecycle:
+      enabled: true
+      rules:
+        - id: "move_to_ia"
+          status: "Enabled"
+          filter:
+            prefix: "temp/"
+          transition:
+            days: 30
+            storage_class: "STANDARD_IA"
+        
+        - id: "delete_old"
+          status: "Enabled"
+          filter:
+            prefix: "logs/"
+          expiration:
+            days: 90
+
+# Network Optimization
+network_optimization:
+  tcp_tuning:
+    tcp_keepalive: true
+    tcp_keepalive_time: 300
+    tcp_keepalive_intvl: 75
+    tcp_keepalive_probes: 9
+  
+  http_tuning:
+    keep_alive: true
+    keep_alive_timeout: 65s
+    max_keep_alive_requests: 100
+  
+  dns:
+    caching: true
+    cache_size: 1000
+    cache_ttl: 300s
+
+# Monitoring and Metrics
+performance_monitoring:
+  metrics_collection:
+    enabled: true
+    interval: 15s
+    retention: 30d
+  
+  apm:
+    enabled: true
+    sampling_rate: 0.1
+    max_trace_duration: 30s
+  
+  profiling:
+    enabled: true
+    cpu_profiling: true
+    memory_profiling: true
+    goroutine_profiling: true
+
+# Resource Management
+resource_management:
+  cpu:
+    requests: "500m"
+    limits: "2"
+    affinity:
+      enabled: true
+      topology_key: "kubernetes.io/hostname"
+  
+  memory:
+    requests: "1Gi"
+    limits: "4Gi"
+    huge_pages:
+      enabled: false
+      size: "2Mi"
+  
+  storage:
+    requests: "10Gi"
+    limits: "100Gi"
+    ephemeral_storage:
+      requests: "1Gi"
+      limits: "5Gi"
+
+# Background Jobs
+background_jobs:
+  scheduler:
+    enabled: true
+    max_concurrent_jobs: 10
+    job_timeout: 3600s
+  
+  workers:
+    ingest_workers:
+      replicas: 3
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "1Gi"
+        limits:
+          cpu: "1"
+          memory: "2Gi"
+    
+    email_workers:
+      replicas: 2
+      resources:
+        requests:
+          cpu: "250m"
+          memory: "512Mi"
+        limits:
+          cpu: "500m"
+          memory: "1Gi"
+    
+    backup_workers:
+      replicas: 1
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "1Gi"
+        limits:
+          cpu: "1"
+          memory: "2Gi"
+
+# Security Performance
+security_performance:
+  encryption:
+    hardware_acceleration: true
+    algorithm: "AES-NI"
+  
+  authentication:
+    session_caching: true
+    token_caching: true
+    cache_ttl: 1800s
+  
+  rate_limiting:
+    distributed: true
+    storage: "redis"
+    cleanup_interval: 60s

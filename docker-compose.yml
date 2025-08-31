@@ -224,6 +224,7 @@ services:
       - llm-manager
       - otrs-integration
       - backup-service
+      - storage-manager
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -397,6 +398,16 @@ services:
       - footage_temp:/tmp/footage
     depends_on:
       - llm-manager
+    restart: unless-stopped
+
+  # Storage Manager Service (auto-detection stub)
+  storage-manager:
+    build:
+      context: ./storage-manager
+      dockerfile: Dockerfile
+    container_name: cas_storage_manager
+    ports:
+      - "8011:8000"
     restart: unless-stopped
 
   # Monitoring Stack

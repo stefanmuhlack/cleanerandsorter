@@ -192,6 +192,40 @@ class MinioObjectStorageRepository(ObjectStorageRepository):
         except S3Error as e:
             logger.error(f"Failed to copy {source_bucket}/{source_key} to {dest_bucket}/{dest_key}: {e}")
             return False
+
+    # Snapshot storage helpers
+    async def store_snapshot(self, snapshot_id: str, content: str, bucket: str = "snapshots") -> bool:
+        """Store a snapshot JSON string as an object."""
+        try:
+            await self._ensure_bucket_exists(bucket)
+            tmp_path = f"/tmp/{snapshot_id}.json"
+            async with aiofiles.open(tmp_path, 'w') as f:
+                await f.write(content)
+            self.client.fput_object(bucket_name=bucket, object_name=f"{snapshot_id}.json", file_path=tmp_path)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to store snapshot {snapshot_id}: {e}")
+            return False
+
+    async def get_snapshot(self, snapshot_id: str, bucket: str = "snapshots") -> Optional[str]:
+        """Retrieve a snapshot JSON string by ID."""
+        try:
+            tmp_path = f"/tmp/{snapshot_id}.json"
+            self.client.fget_object(bucket_name=bucket, object_name=f"{snapshot_id}.json", file_path=tmp_path)
+            async with aiofiles.open(tmp_path, 'r') as f:
+                return await f.read()
+        except Exception as e:
+            logger.error(f"Failed to load snapshot {snapshot_id}: {e}")
+            return None
+
+    async def delete_snapshot(self, snapshot_id: str, bucket: str = "snapshots") -> bool:
+        """Delete a snapshot object."""
+        try:
+            self.client.remove_object(bucket_name=bucket, object_name=f"{snapshot_id}.json")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete snapshot {snapshot_id}: {e}")
+            return False
         except Exception as e:
             logger.error(f"Unexpected error copying file: {e}")
             return False

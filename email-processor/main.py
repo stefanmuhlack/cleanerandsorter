@@ -123,7 +123,7 @@ class EmailProcessor:
         
     def load_configuration(self):
         """Load email accounts and filters from configuration"""
-        config_file = "/app/config/email-processor-config.yaml"
+        config_file = "/app/config/email-config.yaml"
         try:
             if os.path.exists(config_file):
                 with open(config_file, 'r', encoding='utf-8') as f:
@@ -143,6 +143,19 @@ class EmailProcessor:
                 
         except Exception as e:
             logger.error(f"Error loading email processor configuration: {e}")
+        
+    def write_configuration(self, cfg: Dict[str, Any]):
+        """Persist email configuration to YAML and reload in-memory structures."""
+        config_file = "/app/config/email-config.yaml"
+        try:
+            with open(config_file, 'w', encoding='utf-8') as f:
+                yaml.safe_dump(cfg, f, sort_keys=False, allow_unicode=True)
+            # reset and reload
+            self.accounts = []
+            self.filters = []
+            self.load_configuration()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to write email config: {e}")
     
     async def connect_imap(self, account: EmailAccount) -> Optional[imaplib.IMAP4_SSL]:
         """Connect to IMAP server"""
@@ -520,6 +533,50 @@ async def get_accounts():
             for acc in email_processor.accounts
         ]
     }
+
+
+@app.get("/config/email")
+async def get_email_config():
+    """Return email-config.yaml as raw YAML and parsed object."""
+    cfg_path = Path("/app/config/email-config.yaml")
+    cfg: Dict[str, Any] = {}
+    raw = ""
+    try:
+        if cfg_path.exists():
+            with open(cfg_path, 'r', encoding='utf-8') as f:
+                raw = f.read()
+                cfg = yaml.safe_load(raw) or {}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read email config: {e}")
+    return {"config": cfg, "yaml": raw}
+
+
+class EmailConfigPayload(BaseModel):
+    yaml_text: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
+
+
+@app.put("/config/email")
+async def update_email_config(payload: EmailConfigPayload):
+    """Update email-config.yaml with basic validation (multiple accounts supported)."""
+    if not payload.yaml_text and not payload.config:
+        raise HTTPException(status_code=400, detail="Provide yaml_text or config")
+    try:
+        cfg: Dict[str, Any]
+        if payload.yaml_text:
+            cfg = yaml.safe_load(payload.yaml_text) or {}
+        else:
+            cfg = dict(payload.config or {})
+        # Basic validation: expect 'accounts' list for multiple accounts
+        if 'accounts' in cfg and not isinstance(cfg['accounts'], list):
+            raise HTTPException(status_code=400, detail="'accounts' must be a list")
+        # Persist
+        email_processor.write_configuration(cfg)
+        return {"updated": True, "accounts": len(cfg.get('accounts', []))}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid config: {e}")
 
 @app.get("/filters")
 async def get_filters():

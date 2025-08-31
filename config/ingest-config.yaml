@@ -1,0 +1,15 @@
+central_base: "/data/sorted"
+shares:
+  - "/data/source"
+  # add more shares like /mnt/share/customers, /mnt/share/internal
+internal_roots:
+  - "ORGA"
+  - "INFRA"
+  - "SALES"
+  - "HR"
+sorting:
+  enable_year_subfolders: true
+  year_folders_under:
+    - "Projekte"
+    - "Archiv"
+

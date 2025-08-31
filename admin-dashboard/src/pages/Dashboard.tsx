@@ -17,7 +17,11 @@ import {
   Tooltip,
   Alert,
   Divider,
-  Paper
+  Paper,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
 import {
   TrendingUp as TrendingUpIcon,
@@ -77,50 +81,17 @@ interface SystemStats {
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 
 const Dashboard: React.FC = () => {
-  const [stats, setStats] = useState<SystemStats>({
-    totalFiles: 1247,
-    processedFiles: 1180,
-    pendingFiles: 45,
-    failedFiles: 22,
-    storageUsed: 64424509440, // 60 GB
-    storageTotal: 107374182400, // 100 GB
-    processingRate: 12.5,
-    averageProcessingTime: 2.3,
-    systemHealth: 'healthy',
-    services: [
-      { name: 'Ingest Service', status: 'running', uptime: '2d 14h 32m' },
-      { name: 'Elasticsearch', status: 'running', uptime: '5d 8h 15m' },
-      { name: 'MinIO Storage', status: 'running', uptime: '1d 22h 47m' },
-      { name: 'PostgreSQL', status: 'running', uptime: '3d 6h 12m' },
-      { name: 'RabbitMQ', status: 'running', uptime: '4d 1h 33m' },
-    ],
-    recentActivity: [
-      { id: '1', type: 'upload', message: 'Neue Dateien hochgeladen', timestamp: '2 min', status: 'success' },
-      { id: '2', type: 'process', message: 'Batch-Verarbeitung abgeschlossen', timestamp: '5 min', status: 'success' },
-      { id: '3', type: 'error', message: 'OCR-Fehler bei Dokument', timestamp: '8 min', status: 'warning' },
-      { id: '4', type: 'system', message: 'Backup abgeschlossen', timestamp: '1 h', status: 'success' },
-      { id: '5', type: 'upload', message: 'Große Datei verarbeitet', timestamp: '2 h', status: 'success' },
-    ]
-  });
+  const [stats, setStats] = useState<SystemStats | null>(null);
 
   const [loading, setLoading] = useState(false);
 
-  const processingData = [
-    { time: '00:00', files: 12 },
-    { time: '04:00', files: 8 },
-    { time: '08:00', files: 45 },
-    { time: '12:00', files: 67 },
-    { time: '16:00', files: 89 },
-    { time: '20:00', files: 34 },
-  ];
+  const [processingData, setProcessingData] = useState<Array<{time: string; files: number}>>([]);
 
-  const fileTypeData = [
-    { name: 'PDF', value: 456, color: '#0088FE' },
-    { name: 'Dokumente', value: 234, color: '#00C49F' },
-    { name: 'Bilder', value: 345, color: '#FFBB28' },
-    { name: 'Tabellen', value: 156, color: '#FF8042' },
-    { name: 'Archive', value: 56, color: '#8884D8' },
-  ];
+  const [fileTypeData, setFileTypeData] = useState<Array<{ name: string; value: number; color: string }>>([]);
+
+  const [errorDialog, setErrorDialog] = useState<{open: boolean; title: string; details: string}>(
+    { open: false, title: '', details: '' }
+  );
 
   const formatBytes = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
@@ -177,16 +148,68 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const handleRefresh = () => {
-    setLoading(true);
-    // Simulate API call
-    setTimeout(() => {
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : undefined;
+      // Health/services
+      const healthRes = await fetch('/api/health/all', { headers });
+      const health = healthRes.ok ? await healthRes.json() : {};
+      type ServiceItem = { name: string; status: 'running' | 'warning' | 'error'; uptime: string };
+      const services: ServiceItem[] = Object.entries(health)
+        .filter(([k]) => k !== 'cache_time')
+        .map(([name, v]: any) => {
+          const status: 'running' | 'warning' | 'error' = v?.status === 'healthy' ? 'running' : v?.status === 'unhealthy' ? 'error' : 'warning';
+          return {
+            name,
+            status,
+            uptime: v?.last_check ? new Date(v.last_check).toLocaleString() : '-'
+          };
+        });
+      // Ingest stats (basic)
+      const ingestStatsRes = await fetch('/api/ingest/processing/stats', { headers });
+      const ingestStats = ingestStatsRes.ok ? await ingestStatsRes.json() : {};
+      // Build dashboard stats
+      const totalFiles = (ingestStats.total_files_processed || 0) + (ingestStats.failed_files || 0);
+      const processedFiles = ingestStats.successful_files || 0;
+      const failedFiles = ingestStats.failed_files || 0;
+      const pendingFiles = 0;
+      const processingRate = 0;
+      const averageProcessingTime = 0;
+      const systemHealth = services.every(s => s.status === 'running') ? 'healthy' : services.some(s => s.status === 'error') ? 'error' : 'warning';
+      setStats({
+        totalFiles,
+        processedFiles,
+        pendingFiles,
+        failedFiles,
+        storageUsed: 0,
+        storageTotal: 0,
+        processingRate,
+        averageProcessingTime,
+        systemHealth: systemHealth as any,
+        services,
+        recentActivity: []
+      });
+      setProcessingData([]);
+      setFileTypeData([]);
+    } catch (e) {
+      setStats(null);
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
-  const successRate = stats.totalFiles > 0 ? (stats.processedFiles / stats.totalFiles) * 100 : 0;
-  const storagePercentage = (stats.storageUsed / stats.storageTotal) * 100;
+  const handleRefresh = () => { loadData(); };
+
+  useEffect(() => { loadData(); }, []);
+
+  const totalFilesVal = stats?.totalFiles ?? 0;
+  const processedFilesVal = stats?.processedFiles ?? 0;
+  const storageUsedVal = stats?.storageUsed ?? 0;
+  const storageTotalVal = stats?.storageTotal ?? 0;
+  const successRate = totalFilesVal > 0 ? (processedFilesVal / totalFilesVal) * 100 : 0;
+  const storagePercentage = storageTotalVal > 0 ? (storageUsedVal / storageTotalVal) * 100 : 0;
 
   return (
     <Box>
@@ -223,7 +246,7 @@ const Dashboard: React.FC = () => {
                     Gesamt Dateien
                   </Typography>
                   <Typography variant="h4" component="div">
-                    {stats.totalFiles.toLocaleString()}
+                    {stats ? stats.totalFiles.toLocaleString() : 0}
                   </Typography>
                   <Box display="flex" alignItems="center" mt={1}>
                     <TrendingUpIcon color="success" sx={{ fontSize: 16, mr: 0.5 }} />
@@ -252,7 +275,7 @@ const Dashboard: React.FC = () => {
                     {successRate.toFixed(1)}%
                   </Typography>
                   <Typography variant="body2" color="textSecondary" mt={1}>
-                    {stats.processedFiles} von {stats.totalFiles} verarbeitet
+                    {stats ? stats.processedFiles : 0} von {stats ? stats.totalFiles : 0} verarbeitet
                   </Typography>
                 </Box>
                 <Avatar sx={{ bgcolor: 'success.main' }}>
@@ -272,7 +295,7 @@ const Dashboard: React.FC = () => {
                     Verarbeitungsrate
                   </Typography>
                   <Typography variant="h4" component="div" color="primary.main">
-                    {stats.processingRate}
+                    {stats ? stats.processingRate : 0}
                   </Typography>
                   <Typography variant="body2" color="textSecondary" mt={1}>
                     Dateien pro Minute
@@ -295,10 +318,10 @@ const Dashboard: React.FC = () => {
                     Speicherverbrauch
                   </Typography>
                   <Typography variant="h4" component="div" color="warning.main">
-                    {formatBytes(stats.storageUsed)}
+                    {stats ? formatBytes(stats.storageUsed) : '0 B'}
                   </Typography>
                   <Typography variant="body2" color="textSecondary" mt={1}>
-                    {formatPercentage(stats.storageUsed, stats.storageTotal)} von {formatBytes(stats.storageTotal)}
+                    {stats ? formatPercentage(stats.storageUsed, stats.storageTotal) : '0%'} von {stats ? formatBytes(stats.storageTotal) : '0 B'}
                   </Typography>
                 </Box>
                 <Avatar sx={{ bgcolor: 'warning.main' }}>
@@ -320,9 +343,9 @@ const Dashboard: React.FC = () => {
               </Typography>
               <Box display="flex" alignItems="center" mb={2}>
                 <Chip
-                  label={stats.systemHealth}
-                  color={getStatusColor(stats.systemHealth) as any}
-                  icon={getStatusIcon(stats.systemHealth)}
+                  label={stats?.systemHealth ?? 'healthy'}
+                  color={getStatusColor(stats?.systemHealth ?? 'healthy') as any}
+                  icon={getStatusIcon(stats?.systemHealth ?? 'healthy')}
                   sx={{ mr: 2 }}
                 />
                 <Typography variant="body2" color="textSecondary">
@@ -330,8 +353,20 @@ const Dashboard: React.FC = () => {
                 </Typography>
               </Box>
               <List dense>
-                {stats.services.map((service) => (
-                  <ListItem key={service.name} disablePadding>
+                {(stats?.services || []).map((service) => (
+                  <ListItem key={service.name} disablePadding
+                    onClick={() => {
+                      if (service.status !== 'running') {
+                        // fetch latest health for this service to show details
+                        fetch(`/health/all`).then(r => r.json()).then((all) => {
+                          const raw = all && all[service.name] ? all[service.name] : {};
+                          const details = typeof raw === 'object' ? JSON.stringify(raw, null, 2) : String(raw);
+                          setErrorDialog({ open: true, title: `${service.name} status`, details });
+                        }).catch(() => setErrorDialog({ open: true, title: `${service.name} status`, details: 'No details available' }));
+                      }
+                    }}
+                    sx={{ cursor: service.status !== 'running' ? 'pointer' : 'default' }}
+                  >
                     <ListItemIcon>
                       {getStatusIcon(service.status)}
                     </ListItemIcon>
@@ -358,7 +393,7 @@ const Dashboard: React.FC = () => {
                 Letzte Aktivitäten
               </Typography>
               <List dense>
-                {stats.recentActivity.map((activity) => (
+                {(stats?.recentActivity || []).map((activity) => (
                   <ListItem key={activity.id} disablePadding>
                     <ListItemIcon>
                       {getActivityIcon(activity.type)}
@@ -441,7 +476,7 @@ const Dashboard: React.FC = () => {
               </Typography>
               <Box display="flex" alignItems="center" mb={1}>
                 <Typography variant="body2" color="textSecondary" sx={{ flexGrow: 1 }}>
-                  {formatBytes(stats.storageUsed)} von {formatBytes(stats.storageTotal)}
+                  {stats ? formatBytes(stats.storageUsed) : '0 B'} von {stats ? formatBytes(stats.storageTotal) : '0 B'}
                 </Typography>
                 <Typography variant="body2" fontWeight="bold">
                   {storagePercentage.toFixed(1)}%
@@ -465,7 +500,7 @@ const Dashboard: React.FC = () => {
               </Typography>
               <Box display="flex" alignItems="center" mb={1}>
                 <Typography variant="body2" color="textSecondary" sx={{ flexGrow: 1 }}>
-                  {stats.processedFiles} von {stats.totalFiles} Dateien
+                  {(stats ? stats.processedFiles : 0)} von {(stats ? stats.totalFiles : 0)} Dateien
                 </Typography>
                 <Typography variant="body2" fontWeight="bold">
                   {successRate.toFixed(1)}%
@@ -481,6 +516,16 @@ const Dashboard: React.FC = () => {
           </Card>
         </Grid>
       </Grid>
+
+      <Dialog open={errorDialog.open} onClose={() => setErrorDialog({ open: false, title: '', details: '' })} maxWidth="md" fullWidth>
+        <DialogTitle>{errorDialog.title}</DialogTitle>
+        <DialogContent>
+          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{errorDialog.details}</pre>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setErrorDialog({ open: false, title: '', details: '' })}>Schließen</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

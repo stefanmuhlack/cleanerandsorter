@@ -15,6 +15,9 @@ class RBAC:
             self.model = {"roles": {}, "permissions": {}}
 
     def is_allowed(self, role: str, service: str, method: str, path: str) -> bool:
+        # Admin has full access by default
+        if role == 'admin':
+            return True
         perms = self.model.get("permissions", {}).get(service, {})
         method_perms = perms.get(method.upper()) or {}
         allowed_roles = set(method_perms.get("roles", []))

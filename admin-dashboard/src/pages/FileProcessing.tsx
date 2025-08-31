@@ -9,6 +9,7 @@ import {
   Chip,
   LinearProgress,
   Alert,
+  Snackbar,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -57,7 +58,7 @@ import {
 
 const FileProcessing: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { jobs, stats, loading, error } = useAppSelector(state => state.fileProcessing);
+  const { jobs, stats, loading, error, uploadedPaths } = useAppSelector(state => state.fileProcessing);
   
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [processingConfig, setProcessingConfig] = useState({
@@ -71,10 +72,24 @@ const FileProcessing: React.FC = () => {
     open: boolean;
     jobId: string | null;
   }>({ open: false, jobId: null });
+  const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'info' | 'warning' | 'error' }>(
+    { open: false, message: '', severity: 'info' }
+  );
+  const [snapshots, setSnapshots] = useState<any[]>([]);
+
+  const loadSnapshots = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/ingest/snapshots', { headers: token ? { 'Authorization': `Bearer ${token}` } : undefined });
+      const data = await res.json();
+      setSnapshots(data.snapshots || []);
+    } catch {}
+  };
 
   useEffect(() => {
     dispatch(fetchProcessingJobs());
     dispatch(fetchProcessingStats());
+    loadSnapshots();
   }, [dispatch]);
 
   const onDrop = (acceptedFiles: File[]) => {
@@ -103,12 +118,23 @@ const FileProcessing: React.FC = () => {
       formData.append('files', file);
     });
     
-    await dispatch(uploadFiles(selectedFiles));
+    const res = await dispatch(uploadFiles(selectedFiles));
+    if ((res as any).error) {
+      setToast({ open: true, message: 'Upload failed', severity: 'error' });
+    } else {
+      setToast({ open: true, message: 'Upload successful', severity: 'success' });
+    }
     setSelectedFiles([]);
   };
 
   const handleProcess = async () => {
-    await dispatch(processFiles(processingConfig));
+    const filesToProcess = Array.isArray(uploadedPaths) && uploadedPaths.length > 0 ? uploadedPaths : [];
+    const res = await dispatch(processFiles({ files: filesToProcess, config: processingConfig }));
+    if ((res as any).error) {
+      setToast({ open: true, message: 'Processing failed', severity: 'error' });
+    } else {
+      setToast({ open: true, message: 'Processing started', severity: 'success' });
+    }
   };
 
   const handleRollback = async (jobId: string) => {
@@ -227,7 +253,7 @@ const FileProcessing: React.FC = () => {
                 Total Files
               </Typography>
               <Typography variant="h4">
-                {stats?.totalFiles || 0}
+                {stats?.totalFiles ?? 0}
               </Typography>
             </CardContent>
           </Card>
@@ -239,7 +265,7 @@ const FileProcessing: React.FC = () => {
                 Processed
               </Typography>
               <Typography variant="h4" color="success.main">
-                {stats?.processedFiles || 0}
+                {stats?.processedFiles ?? 0}
               </Typography>
             </CardContent>
           </Card>
@@ -251,7 +277,7 @@ const FileProcessing: React.FC = () => {
                 Duplicates Found
               </Typography>
               <Typography variant="h4" color="warning.main">
-                {stats?.duplicatesFound || 0}
+                {stats?.duplicatesFound ?? 0}
               </Typography>
             </CardContent>
           </Card>
@@ -361,13 +387,17 @@ const FileProcessing: React.FC = () => {
 
           {loading && <LinearProgress sx={{ mb: 2 }} />}
 
+          {!loading && (!jobs || jobs.length === 0) && (
+            <Alert severity="info" sx={{ mb: 2 }}>No processing jobs yet. Upload files and start processing.</Alert>
+          )}
+
           <TableContainer component={Paper}>
             <Table>
               <TableHead>
                 <TableRow>
                   <TableCell>Job ID</TableCell>
                   <TableCell>Status</TableCell>
-                  <TableCell>Files</TableCell>
+                  <TableCell>File</TableCell>
                   <TableCell>Progress</TableCell>
                   <TableCell>Created</TableCell>
                   <TableCell>Actions</TableCell>
@@ -379,15 +409,15 @@ const FileProcessing: React.FC = () => {
                     <TableCell>{job.id}</TableCell>
                     <TableCell>
                       <Chip
-                        label={job.status}
-                        color={getStatusColor(job.status) as any}
-                        icon={getStatusIcon(job.status)}
+                        label={job.status || 'unknown'}
+                        color={getStatusColor(job.status || 'unknown') as any}
+                        icon={getStatusIcon(job.status || 'unknown')}
                         size="small"
                       />
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2">
-                        {job.filename}
+                        {job.filename || job.original_path || '—'}
                       </Typography>
                       {job.isDuplicate && (
                         <Typography variant="caption" color="warning.main">
@@ -400,17 +430,17 @@ const FileProcessing: React.FC = () => {
                         <Box sx={{ width: '100%', mr: 1 }}>
                           <LinearProgress 
                             variant="determinate" 
-                            value={job.progress} 
+                            value={typeof job.progress === 'number' ? job.progress : (job.status === 'completed' ? 100 : job.status === 'failed' ? 0 : 0)} 
                             color={job.status === 'failed' ? 'error' : 'primary'}
                           />
                         </Box>
                         <Typography variant="body2" color="textSecondary">
-                          {Math.round(job.progress)}%
+                          {typeof job.progress === 'number' ? Math.round(job.progress) : (job.status === 'completed' ? 100 : 0)}%
                         </Typography>
                       </Box>
                     </TableCell>
                     <TableCell>
-                      {new Date(job.startTime).toLocaleString()}
+                      {new Date(job.startTime || job.created_at || Date.now()).toLocaleString()}
                     </TableCell>
                     <TableCell>
                       <Box sx={{ display: 'flex', gap: 1 }}>
@@ -441,6 +471,52 @@ const FileProcessing: React.FC = () => {
               </TableBody>
             </Table>
           </TableContainer>
+        </CardContent>
+      </Card>
+
+      {/* Snapshots */}
+      <Card sx={{ mt: 3 }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6">Rollback Snapshots</Typography>
+            <Button startIcon={<Refresh />} onClick={loadSnapshots}>Refresh</Button>
+          </Box>
+          {snapshots.length === 0 ? (
+            <Alert severity="info">No snapshots found.</Alert>
+          ) : (
+            <TableContainer component={Paper}>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Snapshot ID</TableCell>
+                    <TableCell>Type</TableCell>
+                    <TableCell>Timestamp</TableCell>
+                    <TableCell>Files</TableCell>
+                    <TableCell>Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {snapshots.map((s) => (
+                    <TableRow key={s.id}>
+                      <TableCell>{s.id}</TableCell>
+                      <TableCell>{s.operation_type}</TableCell>
+                      <TableCell>{new Date(s.timestamp).toLocaleString()}</TableCell>
+                      <TableCell>{Array.isArray(s.file_ids) ? s.file_ids.length : 0}</TableCell>
+                      <TableCell>
+                        <Button size="small" variant="outlined" onClick={async () => {
+                          const token = localStorage.getItem('token');
+                          const res = await fetch(`/api/ingest/snapshots/${encodeURIComponent(s.id)}/rollback`, { method: 'POST', headers: token ? { 'Authorization': `Bearer ${token}` } : undefined });
+                          const ok = res.ok;
+                          setToast({ open: true, message: ok ? 'Rollback executed' : 'Rollback failed', severity: ok ? 'success' : 'error' });
+                          dispatch(fetchProcessingJobs());
+                        }}>Rollback</Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
         </CardContent>
       </Card>
 
@@ -482,6 +558,13 @@ const FileProcessing: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={3000}
+        onClose={() => setToast(prev => ({ ...prev, open: false }))}
+        message={toast.message}
+      />
     </Box>
   );
 };

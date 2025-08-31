@@ -10,15 +10,103 @@ permissions:
   ingest:
     GET:
       paths:
-        - "processing/jobs"
-        - "processing/stats"
+        - "processing/**"
+        - "classification/pending"
+        - "classification/download"
+        - "duplicates"
+        - "duplicates/**"
+        - "crawler/**"
+        - "config/**"
       roles: ["admin", "user"]
     POST:
       paths:
         - "processing/start"
         - "upload"
         - "processing/rollback/*"
+        - "classification/confirm"
+        - "duplicates/**"
+        - "crawler/**"
+        - "config/**"
       roles: ["admin"]
+  email:
+    GET:
+      paths:
+        - "health"
+      roles: ["admin", "user"]
+    POST:
+      paths:
+        - "process/*"
+      roles: ["admin"]
+  footage:
+    GET:
+      paths:
+        - "files/**"
+        - "statistics"
+      roles: ["admin", "user"]
+    POST:
+      paths:
+        - "upload"
+        - "search"
+      roles: ["admin", "user"]
+    DELETE:
+      paths:
+        - "files/*"
+      roles: ["admin"]
+  llm:
+    GET:
+      paths:
+        - "models"
+        - "health"
+      roles: ["admin", "user"]
+    POST:
+      paths:
+        - "models/pull"
+        - "classify"
+      roles: ["admin"]
+    DELETE:
+      paths:
+        - "models/*"
+      roles: ["admin"]
+  otrs:
+    GET:
+      paths:
+        - "tickets"
+        - "tickets/*"
+        - "attachments/*"
+      roles: ["admin", "user"]
+    POST:
+      paths:
+        - "export"
+      roles: ["admin"]
+  backup:
+    GET:
+      paths:
+        - "health"
+        - "backups"
+        - "backups/*"
+      roles: ["admin"]
+    POST:
+      paths:
+        - "backup"
+        - "backups/*/restore"
+        - "cleanup"
+      roles: ["admin"]
+    DELETE:
+      paths:
+        - "backups/*"
+      roles: ["admin"]
+  storage:
+    GET:
+      paths:
+        - "health"
+      roles: ["admin", "user"]
+    POST:
+      paths:
+        - "detect"
+        - "test"
+        - "list"
+        - "download"
+      roles: ["admin", "user"]
   metrics:
     GET:
       paths:

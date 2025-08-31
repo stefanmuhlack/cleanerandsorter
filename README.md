@@ -129,6 +129,15 @@ Das System ist horizontal skalierbar:
 - RBAC (Role-Based Access Control)
 - Audit-Logging für alle Operationen
 
+## 📘 Zusätzliche Dokumentation & Quicklinks
+
+- Admin Guide: `docs/README-ADMIN.md`
+- Gateway Services: `config/gateway-services.yml`
+- RBAC: `config/gateway-rbac.yml`
+- Ingest Config (multi-NAS): `config/ingest-config.yaml` (API: /api/ingest/config/ingest)
+- Email Config (multi-accounts): `config/email-config.yaml` (API: /api/email/config/email)
+- Health (Gateway): `/health/all`
+
 ## 🤝 Beitragen
 
 1. Fork das Repository

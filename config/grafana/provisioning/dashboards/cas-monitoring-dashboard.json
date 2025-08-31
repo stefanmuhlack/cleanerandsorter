@@ -129,12 +129,12 @@
         "type": "stat",
         "targets": [
           {
-            "expr": "duplicates_detected_total",
-            "legendFormat": "Duplicates Detected"
+            "expr": "ingest_crawler_duplicates_total",
+            "legendFormat": "Crawler Duplicates"
           },
           {
-            "expr": "rate(duplicates_detected_total[5m])",
-            "legendFormat": "Duplicates/min"
+            "expr": "rate(ingest_crawler_duplicates_total[5m])",
+            "legendFormat": "Crawler Duplicates/min"
           }
         ],
         "fieldConfig": {
@@ -152,6 +152,27 @@
           }
         },
         "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 16,
+        "title": "Classification Flow",
+        "type": "graph",
+        "targets": [
+          { "expr": "sum by (category) (ingest_classification_manual_total)", "legendFormat": "Manual {{category}}" },
+          { "expr": "sum by (category) (ingest_classification_auto_total)", "legendFormat": "Auto {{category}}" }
+        ],
+        "yAxes": [ { "label": "Count", "min": 0 } ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 64}
+      },
+      {
+        "id": 17,
+        "title": "Confidence Distribution",
+        "type": "graph",
+        "targets": [
+          { "expr": "sum by (bucket) (ingest_classification_confidence_total)", "legendFormat": "{{bucket}}" }
+        ],
+        "yAxes": [ { "label": "Count", "min": 0 } ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 64}
       },
       {
         "id": 7,

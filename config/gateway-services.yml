@@ -51,14 +51,15 @@ services:
     timeout: 15
     rate_limit: "50/minute"
     description: "Top-level domain management service"
-    
-  # NEW TEST SERVICE - Demonstrates dynamic configuration
-  test_service:
-    url: "http://cas_test_service:8000"
+
+  storage:
+    url: "http://cas_storage_manager:8000"
     health_check: "/health"
-    timeout: 25
-    rate_limit: "75/minute"
-    description: "Test service for configuration validation"
+    timeout: 20
+    rate_limit: "100/minute"
+    description: "Storage manager for heterogeneous shares"
+    
+  # test_service removed
 
 # Direct route mappings for frontend compatibility
 # Maps frontend route names to actual service names
@@ -67,7 +68,7 @@ direct_routes:
   processing: "ingest"
   health: "ingest"
   metrics: "ingest"
-  test: "test_service"
+  storage: "storage"
 
 # API-specific routes that should be handled directly by the gateway
 # These routes bypass the generic service routing
@@ -76,25 +77,25 @@ api_routes:
     business:
       path: "/api/metrics/business"
       method: "GET"
-      authentication: false
-      description: "Business metrics aggregation endpoint"
-      mock_data: true
+      authentication: true
+      description: "Business metrics endpoint (returns 204 until implemented)"
+      mock_data: false
       
   audit:
     logs:
       path: "/api/audit/logs"
       method: "GET"
-      authentication: false
-      description: "Audit logs endpoint"
-      mock_data: true
+      authentication: true
+      description: "Audit logs endpoint (returns empty until implemented)"
+      mock_data: false
       
   users:
     list:
       path: "/users/"
       method: "GET"
-      authentication: false
-      description: "User management endpoint"
-      mock_data: true
+      authentication: true
+      description: "User management endpoint (returns empty until implemented)"
+      mock_data: false
       
   # NEW API ROUTE - Demonstrates dynamic route addition
   test:
@@ -102,8 +103,8 @@ api_routes:
       path: "/api/test/status"
       method: "GET"
       authentication: false
-      description: "Test API endpoint for configuration validation"
-      mock_data: true
+      description: "Test API endpoint (returns 204)"
+      mock_data: false
 
 # Gateway configuration
 gateway:

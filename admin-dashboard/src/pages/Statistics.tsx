@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Grid,
@@ -106,54 +106,39 @@ const Statistics: React.FC = () => {
   const [timeRange, setTimeRange] = useState('7d');
   const [selectedMetric, setSelectedMetric] = useState('processing');
 
-  const [stats, setStats] = useState<StatisticsData>({
-    timeRange: '7d',
-    totalFiles: 1247,
-    processedFiles: 1180,
-    failedFiles: 22,
-    averageProcessingTime: 2.3,
-    storageUsed: 64424509440, // 60 GB
-    storageTotal: 107374182400, // 100 GB
-    processingRate: 12.5,
-    successRate: 94.6,
-    fileTypeDistribution: [
-      { type: 'PDF', count: 456, percentage: 36.6, color: '#FF6B6B' },
-      { type: 'Dokumente', count: 234, percentage: 18.8, color: '#4ECDC4' },
-      { type: 'Bilder', count: 345, percentage: 27.7, color: '#45B7D1' },
-      { type: 'Tabellen', count: 156, percentage: 12.5, color: '#96CEB4' },
-      { type: 'Archive', count: 56, percentage: 4.5, color: '#FFEAA7' }
-    ],
-    processingTrend: [
-      { date: '2024-01-10', processed: 45, failed: 2, rate: 95.7 },
-      { date: '2024-01-11', processed: 67, failed: 3, rate: 95.7 },
-      { date: '2024-01-12', processed: 89, failed: 1, rate: 98.9 },
-      { date: '2024-01-13', processed: 34, failed: 4, rate: 89.5 },
-      { date: '2024-01-14', processed: 78, failed: 2, rate: 97.5 },
-      { date: '2024-01-15', processed: 92, failed: 3, rate: 96.8 },
-      { date: '2024-01-16', processed: 56, failed: 1, rate: 98.2 }
-    ],
-    hourlyActivity: [
-      { hour: '00:00', files: 12, processingTime: 1.8 },
-      { hour: '04:00', files: 8, processingTime: 1.2 },
-      { hour: '08:00', files: 45, processingTime: 2.1 },
-      { hour: '12:00', files: 67, processingTime: 2.8 },
-      { hour: '16:00', files: 89, processingTime: 3.2 },
-      { hour: '20:00', files: 34, processingTime: 1.9 }
-    ],
-    topKeywords: [
-      { keyword: 'rechnung', count: 156, successRate: 98.5 },
-      { keyword: 'vertrag', count: 89, successRate: 95.2 },
-      { keyword: 'finanz', count: 67, successRate: 97.8 },
-      { keyword: 'bericht', count: 45, successRate: 92.1 },
-      { keyword: 'dokument', count: 34, successRate: 88.9 }
-    ],
-    performanceMetrics: [
-      { metric: 'Verarbeitungsrate', value: 12.5, unit: 'Dateien/min', trend: 'up', change: 8.2 },
-      { metric: 'Durchschnittszeit', value: 2.3, unit: 'Sekunden', trend: 'down', change: -12.5 },
-      { metric: 'Erfolgsrate', value: 94.6, unit: '%', trend: 'up', change: 2.1 },
-      { metric: 'Speicherverbrauch', value: 60, unit: 'GB', trend: 'up', change: 15.3 }
-    ]
-  });
+  const [stats, setStats] = useState<StatisticsData | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setLoading(true);
+        const token = localStorage.getItem('token');
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : undefined;
+        const ingest = await fetch('/api/ingest/processing/stats', { headers });
+        const s = ingest.ok ? await ingest.json() : {};
+        setStats({
+          timeRange,
+          totalFiles: (s.total_files_processed || 0) + (s.failed_files || 0),
+          processedFiles: s.successful_files || 0,
+          failedFiles: s.failed_files || 0,
+          averageProcessingTime: 0,
+          storageUsed: 0,
+          storageTotal: 0,
+          processingRate: 0,
+          successRate: s.total_files_processed ? Math.round((s.successful_files || 0) / (s.total_files_processed) * 1000) / 10 : 0,
+          fileTypeDistribution: [],
+          processingTrend: [],
+          hourlyActivity: [],
+          topKeywords: [],
+          performanceMetrics: []
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [timeRange]);
 
   const formatBytes = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
@@ -216,7 +201,7 @@ const Statistics: React.FC = () => {
     console.log('Refreshing statistics...');
   };
 
-  const storagePercentage = (stats.storageUsed / stats.storageTotal) * 100;
+  const storagePercentage = stats ? (stats.storageTotal > 0 ? (stats.storageUsed / stats.storageTotal) * 100 : 0) : 0;
 
   return (
     <Box>
@@ -278,6 +263,7 @@ const Statistics: React.FC = () => {
       </Card>
 
       {/* Key Metrics */}
+      {loading && <LinearProgress sx={{ mb: 2 }} />}
       <Grid container spacing={3} mb={3}>
         <Grid item xs={12} sm={6} md={3}>
           <Card>
@@ -288,7 +274,7 @@ const Statistics: React.FC = () => {
                     Gesamt Dateien
                   </Typography>
                   <Typography variant="h4" component="div">
-                    {stats.totalFiles.toLocaleString()}
+                    {stats ? stats.totalFiles.toLocaleString() : 0}
                   </Typography>
                   <Box display="flex" alignItems="center" mt={1}>
                     {getTrendIcon('up')}
@@ -314,7 +300,7 @@ const Statistics: React.FC = () => {
                     Erfolgsrate
                   </Typography>
                   <Typography variant="h4" component="div" color="success.main">
-                    {stats.successRate}%
+                    {stats ? stats.successRate : 0}%
                   </Typography>
                   <Box display="flex" alignItems="center" mt={1}>
                     {getTrendIcon('up')}
@@ -340,7 +326,7 @@ const Statistics: React.FC = () => {
                     Verarbeitungsrate
                   </Typography>
                   <Typography variant="h4" component="div" color="primary.main">
-                    {stats.processingRate}
+                    {stats ? stats.processingRate : 0}
                   </Typography>
                   <Typography variant="body2" color="textSecondary" mt={1}>
                     Dateien pro Minute
@@ -363,10 +349,10 @@ const Statistics: React.FC = () => {
                     Speicherverbrauch
                   </Typography>
                   <Typography variant="h4" component="div" color="warning.main">
-                    {formatBytes(stats.storageUsed)}
+                    {stats ? formatBytes(stats.storageUsed) : '0 B'}
                   </Typography>
                   <Typography variant="body2" color="textSecondary" mt={1}>
-                    {formatPercentage(stats.storageUsed, stats.storageTotal)} von {formatBytes(stats.storageTotal)}
+                    {stats ? formatPercentage(stats.storageUsed, stats.storageTotal) : '0%'} von {stats ? formatBytes(stats.storageTotal) : '0 B'}
                   </Typography>
                 </Box>
                 <Avatar sx={{ bgcolor: 'warning.main' }}>
@@ -387,7 +373,7 @@ const Statistics: React.FC = () => {
                 Verarbeitungstrend ({timeRange})
               </Typography>
               <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={stats.processingTrend}>
+                <AreaChart data={stats ? stats.processingTrend : []}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" />
                   <YAxis />
@@ -423,7 +409,7 @@ const Statistics: React.FC = () => {
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
                   <Pie
-                    data={stats.fileTypeDistribution}
+                    data={stats ? stats.fileTypeDistribution : []}
                     cx="50%"
                     cy="50%"
                     labelLine={false}
@@ -432,7 +418,7 @@ const Statistics: React.FC = () => {
                     fill="#8884d8"
                     dataKey="count"
                   >
-                    {stats.fileTypeDistribution.map((entry, index) => (
+                    {(stats ? stats.fileTypeDistribution : []).map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
@@ -453,7 +439,7 @@ const Statistics: React.FC = () => {
                 Performance Metriken
               </Typography>
               <Grid container spacing={2}>
-                {stats.performanceMetrics.map((metric, index) => (
+                {(stats ? stats.performanceMetrics : []).map((metric, index) => (
                   <Grid item xs={12} sm={6} md={3} key={index}>
                     <Box display="flex" alignItems="center" justifyContent="space-between" p={2} border={1} borderColor="divider" borderRadius={1}>
                       <Box>
@@ -501,7 +487,7 @@ const Statistics: React.FC = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {stats.topKeywords.map((keyword, index) => (
+                    {(stats ? stats.topKeywords : []).map((keyword, index) => (
                       <TableRow key={index}>
                         <TableCell>
                           <Box display="flex" alignItems="center" gap={1}>
@@ -537,7 +523,7 @@ const Statistics: React.FC = () => {
                 Stündliche Aktivität
               </Typography>
               <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={stats.hourlyActivity}>
+                <BarChart data={stats ? stats.hourlyActivity : []}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="hour" />
                   <YAxis />
@@ -558,7 +544,7 @@ const Statistics: React.FC = () => {
           </Typography>
           <Box display="flex" alignItems="center" mb={2}>
             <Typography variant="body2" color="textSecondary" sx={{ flexGrow: 1 }}>
-              {formatBytes(stats.storageUsed)} von {formatBytes(stats.storageTotal)} verwendet
+              {stats ? formatBytes(stats.storageUsed) : '0 B'} von {stats ? formatBytes(stats.storageTotal) : '0 B'} verwendet
             </Typography>
             <Typography variant="body2" fontWeight="bold">
               {storagePercentage.toFixed(1)}%
@@ -572,10 +558,10 @@ const Statistics: React.FC = () => {
           />
           <Box display="flex" justifyContent="space-between" mt={1}>
             <Typography variant="caption" color="textSecondary">
-              Verfügbar: {formatBytes(stats.storageTotal - stats.storageUsed)}
+              Verfügbar: {stats ? formatBytes(stats.storageTotal - stats.storageUsed) : '0 B'}
             </Typography>
             <Typography variant="caption" color="textSecondary">
-              Verwendet: {formatBytes(stats.storageUsed)}
+              Verwendet: {stats ? formatBytes(stats.storageUsed) : '0 B'}
             </Typography>
           </Box>
         </CardContent>

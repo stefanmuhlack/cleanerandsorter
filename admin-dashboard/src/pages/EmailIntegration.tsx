@@ -105,114 +105,59 @@ const EmailIntegration: React.FC = () => {
   const [exportDialog, setExportDialog] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
-  // Mock data for demonstration
   useEffect(() => {
-    setEmailAccounts([
-      {
-        name: 'OTRS Support',
-        imap_host: 'mail.company.com',
-        imap_port: 993,
-        imap_username: 'support@company.com',
-        enabled: true,
-        last_processed: '2024-01-15T10:30:00Z',
-        status: 'active'
-      },
-      {
-        name: 'Vertrieb',
-        imap_host: 'mail.company.com',
-        imap_port: 993,
-        imap_username: 'vertrieb@company.com',
-        enabled: true,
-        last_processed: '2024-01-15T09:15:00Z',
-        status: 'active'
-      },
-      {
-        name: 'General Support',
-        imap_host: 'mail.company.com',
-        imap_port: 993,
-        imap_username: 'support@company.com',
-        enabled: false,
-        last_processed: '2024-01-14T16:45:00Z',
-        status: 'inactive'
+    const load = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : undefined;
+        const rAcc = await fetch('/api/email/accounts', { headers });
+        const dAcc = rAcc.ok ? await rAcc.json() : { accounts: [] };
+        setEmailAccounts(dAcc.accounts || []);
+        const rFilt = await fetch('/api/email/filters', { headers });
+        const dFilt = rFilt.ok ? await rFilt.json() : { filters: [] };
+        setEmailFilters(dFilt.filters || []);
+        const rTasks = await fetch('/api/email/tasks', { headers });
+        const dTasks = rTasks.ok ? await rTasks.json() : { tasks: [] };
+        setProcessingTasks((dTasks.tasks || []).map((t: any) => ({
+          id: t.task_id,
+          account: t.account,
+          status: t.status,
+          emails_processed: t.emails_processed || 0,
+          emails_failed: t.emails_failed || 0,
+          attachments_processed: t.attachments_processed || 0,
+          attachments_failed: t.attachments_failed || 0,
+          started_at: t.created_at
+        })));
+      } catch {
+        setEmailAccounts([]);
+        setEmailFilters([]);
+        setProcessingTasks([]);
       }
-    ]);
-
-    setEmailFilters([
-      {
-        name: 'Support Tickets',
-        enabled: true,
-        filter_subject: ['support', 'ticket', 'help'],
-        filter_from: ['support@', 'help@'],
-        filter_attachment_types: ['pdf', 'doc', 'docx'],
-        actions: ['tag', 'correspondent', 'delete']
-      },
-      {
-        name: 'Invoice Attachments',
-        enabled: true,
-        filter_subject: ['rechnung', 'invoice', 'bill'],
-        filter_from: ['billing@', 'finance@'],
-        filter_attachment_types: ['pdf', 'doc', 'docx'],
-        actions: ['tag', 'correspondent']
-      }
-    ]);
-
-    setProcessingTasks([
-      {
-        id: 'task_1',
-        account: 'OTRS Support',
-        status: 'completed',
-        emails_processed: 15,
-        emails_failed: 0,
-        attachments_processed: 23,
-        attachments_failed: 1,
-        started_at: '2024-01-15T10:00:00Z',
-        completed_at: '2024-01-15T10:05:00Z'
-      },
-      {
-        id: 'task_2',
-        account: 'Vertrieb',
-        status: 'processing',
-        emails_processed: 8,
-        emails_failed: 1,
-        attachments_processed: 12,
-        attachments_failed: 0,
-        started_at: '2024-01-15T10:30:00Z'
-      }
-    ]);
-
-    setOtrsExports([
-      {
-        id: 'export_1',
-        status: 'completed',
-        total_tickets: 45,
-        processed_tickets: 43,
-        failed_tickets: 2,
-        attachments_downloaded: 67,
-        classification_results: 43,
-        created_at: '2024-01-15T09:00:00Z',
-        export_path: '/mnt/nas/otrs-exports/export_20240115_090000'
-      }
-    ]);
+    };
+    load();
   }, []);
 
   const handleStartProcessing = async (accountName: string) => {
     setLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      const newTask: ProcessingTask = {
-        id: `task_${Date.now()}`,
-        account: accountName,
-        status: 'processing',
-        emails_processed: 0,
-        emails_failed: 0,
-        attachments_processed: 0,
-        attachments_failed: 0,
-        started_at: new Date().toISOString()
-      };
-      
-      setProcessingTasks(prev => [newTask, ...prev]);
+      const token = localStorage.getItem('token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : undefined;
+      const res = await fetch(`/api/email/process-account/${encodeURIComponent(accountName)}`, { method: 'POST', headers });
+      if (res.ok) {
+        const data = await res.json();
+        setProcessingTasks(prev => [{
+          id: data.task_id,
+          account: accountName,
+          status: data.status,
+          emails_processed: 0,
+          emails_failed: 0,
+          attachments_processed: 0,
+          attachments_failed: 0,
+          started_at: new Date().toISOString()
+        }, ...prev]);
+      } else {
+        setMessage({ type: 'error', text: `Failed to start processing (HTTP ${res.status})` });
+      }
       setMessage({ type: 'success', text: `Started processing for ${accountName}` });
       
     } catch (error) {
@@ -226,21 +171,7 @@ const EmailIntegration: React.FC = () => {
   const handleStartOTRSExport = async () => {
     setLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      const newExport: OTRSExport = {
-        id: `export_${Date.now()}`,
-        status: 'processing',
-        total_tickets: 0,
-        processed_tickets: 0,
-        failed_tickets: 0,
-        attachments_downloaded: 0,
-        classification_results: 0,
-        created_at: new Date().toISOString()
-      };
-      
-      setOtrsExports(prev => [newExport, ...prev]);
+      setMessage({ type: 'info', text: 'OTRS export trigger coming soon' });
       setMessage({ type: 'success', text: 'OTRS export started' });
       
     } catch (error) {

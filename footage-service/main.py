@@ -11,7 +11,7 @@ import logging
 import tempfile
 import shutil
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 from pathlib import Path
 import hashlib
 import mimetypes
@@ -27,6 +27,7 @@ from PIL import Image, ImageOps
 import cv2
 import exifread
 from moviepy.editor import VideoFileClip
+import httpx
 
 # Import LLM Manager for classification
 try:
@@ -105,6 +106,18 @@ class ThumbnailRequest(BaseModel):
     size: Optional[tuple] = (300, 300)
     quality: int = 85
 
+
+class ImportFromShareRequest(BaseModel):
+    storage_manager_url: str
+    share: Dict[str, Any]
+    paths: List[str]
+    customer: Optional[str] = None
+    project: Optional[str] = None
+    category: Optional[str] = None
+    generate_thumbnail: bool = True
+    extract_metadata: bool = True
+    enable_classification: bool = False
+
 # LLM Classifier
 llm_classifier = None
 if config.enable_llm_classification and LLMClassifier:
@@ -126,6 +139,7 @@ class FootageManager:
         self.temp_path.mkdir(parents=True, exist_ok=True)
         
         self.media_files: Dict[str, MediaFile] = {}
+        self.hash_index: Dict[str, str] = {}
         self.load_existing_files()
     
     def load_existing_files(self):
@@ -140,6 +154,12 @@ class FootageManager:
                         media_file = self.create_media_file_from_path(file_path)
                         if media_file:
                             self.media_files[file_id] = media_file
+                            try:
+                                file_hash = self.calculate_file_hash(file_path)
+                                if file_hash:
+                                    self.hash_index[file_hash] = file_id
+                            except Exception:
+                                pass
             
             logger.info(f"Loaded {len(self.media_files)} existing media files")
             
@@ -198,6 +218,79 @@ class FootageManager:
                 hash_sha256.update(chunk)
         return hash_sha256.hexdigest()
     
+    def _process_saved_path(self, file_path: Path, original_filename: str, request: MediaUploadRequest) -> MediaFile:
+        """Process a file that is already saved to disk (dedup, metadata, thumbnail, classification)."""
+        try:
+            # Deduplication check by hash
+            file_hash = self.calculate_file_hash(file_path)
+            if file_hash and file_hash in self.hash_index:
+                existing_id = self.hash_index[file_hash]
+                existing = self.media_files.get(existing_id)
+                if existing:
+                    # Move duplicate to _duplicates preserving customer root
+                    try:
+                        base_dir = Path(existing.original_path).parents[2] if len(Path(existing.original_path).parents) >= 3 else self.footage_path
+                        dup_dir = base_dir / "_duplicates"
+                        dup_dir.mkdir(parents=True, exist_ok=True)
+                        target = dup_dir / original_filename
+                        # Prevent overwrite by suffixing
+                        counter = 1
+                        while target.exists():
+                            target = dup_dir / f"{target.stem}_{counter}{target.suffix}"
+                            counter += 1
+                        file_path.replace(target)
+                    except Exception as e:
+                        logger.warning(f"Failed to move duplicate to _duplicates: {e}")
+                    # Return existing without creating new record
+                    return existing
+
+            file_type = self.get_file_type(file_path)
+            if not file_type:
+                raise HTTPException(status_code=400, detail="Unsupported file type")
+
+            file_id = self.generate_file_id(file_path)
+            stat = file_path.stat()
+
+            media_file = MediaFile(
+                id=file_id,
+                filename=original_filename,
+                original_path=str(file_path),
+                file_type=file_type,
+                mime_type=mimetypes.guess_type(file_path)[0] or "application/octet-stream",
+                size=stat.st_size,
+                hash=file_hash,
+                customer=request.customer,
+                project=request.project,
+                category=request.category or "unknown",
+                tags=request.tags or [],
+                created_at=datetime.now().isoformat(),
+                updated_at=datetime.now().isoformat()
+            )
+
+            # Extract metadata if requested
+            if request.extract_metadata:
+                media_file.metadata = self.extract_metadata_sync(file_path, file_type)
+
+            # Generate thumbnail if requested
+            if request.generate_thumbnail and file_type in ["image", "video"]:
+                thumbnail_path = self.generate_thumbnail_sync(file_path, file_id, file_type)
+                if thumbnail_path:
+                    media_file.thumbnail_path = thumbnail_path
+
+            # Optional classification
+            # (left async path for future; here we keep sync pipeline robust)
+
+            # Save indices
+            self.media_files[file_id] = media_file
+            if file_hash:
+                self.hash_index[file_hash] = file_id
+            return media_file
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error processing saved file: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
+
     async def process_uploaded_file(self, file: UploadFile, request: MediaUploadRequest) -> MediaFile:
         """Process uploaded file and create MediaFile object"""
         try:
@@ -218,53 +311,30 @@ class FootageManager:
             with open(file_path, "wb") as f:
                 content = await file.read()
                 f.write(content)
-            
-            # Create MediaFile object
-            file_id = self.generate_file_id(file_path)
-            stat = file_path.stat()
-            
-            media_file = MediaFile(
-                id=file_id,
-                filename=file.filename,
-                original_path=str(file_path),
-                file_type=file_type,
-                mime_type=file.content_type or "application/octet-stream",
-                size=stat.st_size,
-                hash=self.calculate_file_hash(file_path),
-                customer=request.customer,
-                project=request.project,
-                category=request.category or "unknown",
-                tags=request.tags or [],
-                created_at=datetime.now().isoformat(),
-                updated_at=datetime.now().isoformat()
-            )
-            
-            # Extract metadata if requested
-            if request.extract_metadata:
-                media_file.metadata = await self.extract_metadata(file_path, file_type)
-            
-            # Generate thumbnail if requested
-            if request.generate_thumbnail and file_type in ["image", "video"]:
-                thumbnail_path = await self.generate_thumbnail(file_path, file_id, file_type)
-                if thumbnail_path:
-                    media_file.thumbnail_path = thumbnail_path
-            
-            # Classify file if requested
-            if request.enable_classification and llm_classifier:
-                classification = await self.classify_media_file(media_file)
-                if classification:
-                    media_file.category = classification.get("category", media_file.category)
-                    media_file.tags.extend(classification.get("tags", []))
-            
-            # Save to storage
-            self.media_files[file_id] = media_file
-            
-            logger.info(f"Processed uploaded file: {file.filename} (ID: {file_id})")
-            return media_file
+            return self._process_saved_path(file_path, file.filename, request)
             
         except Exception as e:
             logger.error(f"Error processing uploaded file: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
+
+    def extract_metadata_sync(self, file_path: Path, file_type: str) -> Dict[str, Any]:
+        # Wrapper around async methods for reuse in sync pipeline
+        import asyncio
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            return loop.run_until_complete(self.extract_metadata(file_path, file_type))
+        finally:
+            loop.close()
+
+    def generate_thumbnail_sync(self, file_path: Path, file_id: str, file_type: str) -> Optional[str]:
+        import asyncio
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            return loop.run_until_complete(self.generate_thumbnail(file_path, file_id, file_type))
+        finally:
+            loop.close()
     
     async def extract_metadata(self, file_path: Path, file_type: str) -> Dict[str, Any]:
         """Extract metadata from media file"""
@@ -523,14 +593,46 @@ async def upload_media_file(
         logger.error(f"Error uploading file: {e}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
-@app.get("/files", response_model=List[MediaFile])
+
+class BatchUploadResponse(BaseModel):
+    items: List[MediaFile] = []
+    errors: List[Dict[str, Any]] = []
+
+
+@app.post("/upload/batch", response_model=BatchUploadResponse)
+async def upload_media_files_batch(
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(...),
+    request: MediaUploadRequest = Depends(),
+):
+    """Batch upload multiple media files with per-file processing and dedup handling."""
+    results: List[MediaFile] = []
+    errors: List[Dict[str, Any]] = []
+    for f in files:
+        try:
+            media_file = await footage_manager.process_uploaded_file(f, request)
+            results.append(media_file)
+        except HTTPException as he:
+            errors.append({"filename": f.filename, "error": he.detail})
+        except Exception as e:
+            errors.append({"filename": f.filename, "error": str(e)})
+    return BatchUploadResponse(items=results, errors=errors)
+
+class PagedFilesResponse(BaseModel):
+    items: List[MediaFile]
+    total: int
+
+
+@app.get("/files", response_model=PagedFilesResponse)
 async def list_media_files(
     customer: Optional[str] = None,
     project: Optional[str] = None,
     category: Optional[str] = None,
     file_type: Optional[str] = None,
     limit: int = 50,
-    offset: int = 0
+    offset: int = 0,
+    sort_by: Optional[str] = None,
+    sort_dir: Optional[str] = "desc"
 ):
     """List media files with optional filtering"""
     try:
@@ -545,11 +647,23 @@ async def list_media_files(
             files = [f for f in files if f.category == category]
         if file_type:
             files = [f for f in files if f.file_type == file_type]
+
+        total = len(files)
+
+        # Sorting
+        key_map = {
+            'created_at': lambda f: f.created_at,
+            'updated_at': lambda f: f.updated_at,
+            'size': lambda f: f.size,
+            'filename': lambda f: f.filename.lower(),
+        }
+        if sort_by in key_map:
+            files.sort(key=key_map[sort_by], reverse=(sort_dir or 'desc').lower() == 'desc')
         
         # Apply pagination
-        files = files[offset:offset + limit]
+        items = files[offset:offset + limit]
         
-        return files
+        return PagedFilesResponse(items=items, total=total)
         
     except Exception as e:
         logger.error(f"Error listing files: {e}")
@@ -676,6 +790,57 @@ async def get_statistics():
     except Exception as e:
         logger.error(f"Error getting statistics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get statistics: {str(e)}")
+
+
+@app.post("/import-from-share")
+async def import_from_share(req: ImportFromShareRequest):
+    """Import selected files from heterogeneous shares via storage-manager.
+    For each path, stream download from storage-manager and process into local repository with dedup.
+    """
+    try:
+        imported: List[Dict[str, Any]] = []
+        errors: List[Dict[str, Any]] = []
+        customer_dir = footage_manager.footage_path / (req.customer or "unknown")
+        project_dir = customer_dir / (req.project or "general")
+        project_dir.mkdir(parents=True, exist_ok=True)
+        async with httpx.AsyncClient(timeout=None) as client:
+            for p in req.paths:
+                try:
+                    # Request storage-manager download
+                    resp = await client.post(f"{req.storage_manager_url.rstrip('/')}/download", json={"share": req.share, "path": p})
+                    if resp.status_code != 200:
+                        errors.append({"path": p, "error": f"HTTP {resp.status_code}"})
+                        continue
+                    # Determine filename
+                    name = os.path.basename(p) or f"import_{hashlib.md5(p.encode()).hexdigest()}"
+                    dest = project_dir / name
+                    with open(dest, 'wb') as out:
+                        async for chunk in resp.aiter_bytes(chunk_size=1024*1024):
+                            out.write(chunk)
+                    # Process saved file (dedup aware)
+                    media = footage_manager._process_saved_path(dest, name, MediaUploadRequest(
+                        customer=req.customer,
+                        project=req.project,
+                        category=req.category,
+                        generate_thumbnail=req.generate_thumbnail,
+                        extract_metadata=req.extract_metadata,
+                        enable_classification=req.enable_classification,
+                    ))
+                    imported.append(media.dict())
+                except HTTPException as he:
+                    # If duplicate, we keep as error with existing id
+                    errors.append({"path": p, "error": he.detail})
+                    try:
+                        if dest and dest.exists():
+                            dest.unlink()
+                    except Exception:
+                        pass
+                except Exception as e:
+                    errors.append({"path": p, "error": str(e)})
+        return {"imported": imported, "errors": errors}
+    except Exception as e:
+        logger.error(f"Import from share error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

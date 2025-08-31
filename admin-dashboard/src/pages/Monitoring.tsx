@@ -94,7 +94,7 @@ const Monitoring: React.FC = () => {
   const [refreshInterval, setRefreshInterval] = useState(30);
   const [error, setError] = useState<string | null>(null);
 
-  const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+  const API_BASE_URL = '/api';
 
   const fetchServiceHealth = async () => {
     try {
@@ -102,10 +102,7 @@ const Monitoring: React.FC = () => {
       setError(null);
       
       const response = await fetch(`${API_BASE_URL}/health/all`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const healthData = await response.json();
       
       // Transform the health data into our expected format
@@ -126,59 +123,7 @@ const Monitoring: React.FC = () => {
       console.error('Failed to fetch service health:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch service health');
       
-      // Fallback to mock data
-      setServices([
-        {
-          service: 'api-gateway',
-          status: 'healthy',
-          timestamp: new Date().toISOString(),
-          version: '1.0.0'
-        },
-        {
-          service: 'ingest-service',
-          status: 'healthy',
-          timestamp: new Date().toISOString(),
-          version: '1.0.0',
-          dependencies: {
-            elasticsearch: { status: 'healthy', response_time_ms: 45 },
-            minio: { status: 'healthy', buckets_count: 5 },
-            rabbitmq: { status: 'healthy', queue_messages: 12 },
-            postgres: { status: 'healthy', database_size: '2.3 GB' },
-            ollama: { status: 'healthy', models_count: 3 }
-          }
-        },
-        {
-          service: 'email-processor',
-          status: 'healthy',
-          timestamp: new Date().toISOString(),
-          version: '1.0.0'
-        },
-        {
-          service: 'otrs-integration',
-          status: 'degraded',
-          timestamp: new Date().toISOString(),
-          version: '1.0.0',
-          unhealthy_services: ['otrs-api']
-        },
-        {
-          service: 'llm-manager',
-          status: 'healthy',
-          timestamp: new Date().toISOString(),
-          version: '1.0.0'
-        },
-        {
-          service: 'backup-service',
-          status: 'healthy',
-          timestamp: new Date().toISOString(),
-          version: '1.0.0'
-        },
-        {
-          service: 'footage-service',
-          status: 'healthy',
-          timestamp: new Date().toISOString(),
-          version: '1.0.0'
-        }
-      ]);
+      setServices([]);
     } finally {
       setLoading(false);
     }
@@ -189,42 +134,26 @@ const Monitoring: React.FC = () => {
       const response = await fetch(`${API_BASE_URL}/metrics`);
       if (response.ok) {
         const metricsText = await response.text();
-        // Parse Prometheus metrics (simplified)
         const metrics = parsePrometheusMetrics(metricsText);
         setMetrics(metrics);
+      } else {
+        setMetrics(null);
       }
     } catch (err) {
       console.error('Failed to fetch metrics:', err);
-      // Use mock data
-      setMetrics({
-        cpu_usage: 45,
-        memory_usage: 67,
-        disk_usage: 23,
-        network_io: 125,
-        active_connections: 89,
-        queue_depth: 15
-      });
+      setMetrics(null);
     }
   };
 
   const parsePrometheusMetrics = (metricsText: string): SystemMetrics => {
-    // Simplified Prometheus metrics parsing
-    const lines = metricsText.split('\n');
-    const metrics: any = {};
-    
-    lines.forEach(line => {
-      if (line.includes('gateway_requests_total')) {
-        metrics.active_connections = Math.floor(Math.random() * 100) + 50;
-      }
-    });
-    
+    // Minimal parsing with safe defaults
     return {
-      cpu_usage: Math.floor(Math.random() * 60) + 20,
-      memory_usage: Math.floor(Math.random() * 40) + 50,
-      disk_usage: Math.floor(Math.random() * 30) + 10,
-      network_io: Math.floor(Math.random() * 200) + 50,
-      active_connections: metrics.active_connections || 89,
-      queue_depth: Math.floor(Math.random() * 50) + 5
+      cpu_usage: 0,
+      memory_usage: 0,
+      disk_usage: 0,
+      network_io: 0,
+      active_connections: 0,
+      queue_depth: 0
     };
   };
 
@@ -290,16 +219,24 @@ const Monitoring: React.FC = () => {
 
   const handleServiceClick = async (serviceName: string) => {
     setSelectedService(serviceName);
-    // In a real implementation, fetch detailed service information
-    setServiceDetails({
-      name: serviceName,
-      uptime: '15 days, 3 hours',
-      requests_per_second: 45.2,
-      average_response_time: 125,
-      error_rate: 0.02,
-      memory_usage: 256,
-      cpu_usage: 12
-    });
+    try {
+      const token = localStorage.getItem('token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : undefined;
+      const res = await fetch(`/api/${serviceName}/health`, { headers });
+      if (res.ok) {
+        const text = await res.text();
+        try {
+          const json = JSON.parse(text);
+          setServiceDetails(json);
+        } catch {
+          setServiceDetails(text);
+        }
+      } else {
+        setServiceDetails({ error: `HTTP ${res.status}` });
+      }
+    } catch (e: any) {
+      setServiceDetails({ error: e?.message || 'Failed to load details' });
+    }
   };
 
   const handleRefresh = () => {
@@ -486,24 +423,7 @@ const Monitoring: React.FC = () => {
             <Typography variant="h6" gutterBottom>
               Performance Trends
             </Typography>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={[
-                { time: '00:00', cpu: 45, memory: 67, network: 125 },
-                { time: '04:00', cpu: 38, memory: 62, network: 98 },
-                { time: '08:00', cpu: 52, memory: 71, network: 145 },
-                { time: '12:00', cpu: 68, memory: 78, network: 189 },
-                { time: '16:00', cpu: 61, memory: 75, network: 167 },
-                { time: '20:00', cpu: 47, memory: 69, network: 134 }
-              ]}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="time" />
-                <YAxis />
-                <RechartsTooltip />
-                <Line type="monotone" dataKey="cpu" stroke="#8884d8" name="CPU %" />
-                <Line type="monotone" dataKey="memory" stroke="#82ca9d" name="Memory %" />
-                <Line type="monotone" dataKey="network" stroke="#ffc658" name="Network MB/s" />
-              </LineChart>
-            </ResponsiveContainer>
+            <Alert severity="info">Detailed time series are available in Grafana.</Alert>
           </CardContent>
         </Card>
       </Grid>
@@ -632,26 +552,13 @@ const Monitoring: React.FC = () => {
         </DialogTitle>
         <DialogContent>
           {serviceDetails && (
-            <Grid container spacing={2} sx={{ mt: 1 }}>
-              <Grid item xs={6}>
-                <Typography><strong>Uptime:</strong> {serviceDetails.uptime}</Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography><strong>Requests/sec:</strong> {serviceDetails.requests_per_second}</Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography><strong>Avg Response Time:</strong> {serviceDetails.average_response_time}ms</Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography><strong>Error Rate:</strong> {(serviceDetails.error_rate * 100).toFixed(2)}%</Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography><strong>Memory Usage:</strong> {serviceDetails.memory_usage}MB</Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography><strong>CPU Usage:</strong> {serviceDetails.cpu_usage}%</Typography>
-              </Grid>
-            </Grid>
+            typeof serviceDetails === 'string' ? (
+              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{serviceDetails}</pre>
+            ) : (
+              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {JSON.stringify(serviceDetails, null, 2)}
+              </pre>
+            )
           )}
         </DialogContent>
         <DialogActions>

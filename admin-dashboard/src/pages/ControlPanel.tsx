@@ -48,6 +48,7 @@ import {
   Warning as WarningIcon,
   Info as InfoIcon,
 } from '@mui/icons-material';
+import { apiFetch } from '../utils/api';
 
 interface ServiceStatus {
   name: string;
@@ -116,6 +117,11 @@ const ControlPanel: React.FC = () => {
   const [configDialog, setConfigDialog] = useState(false);
   const [userDialog, setUserDialog] = useState(false);
   const [selectedConfig, setSelectedConfig] = useState<any>(null);
+  const [crawlerStatus, setCrawlerStatus] = useState<any>(null);
+  const [crawlerLoading, setCrawlerLoading] = useState<boolean>(false);
+  const [ingestConfig, setIngestConfig] = useState<string>('');
+  const [ingestDialog, setIngestDialog] = useState(false);
+  const [confidenceThreshold, setConfidenceThreshold] = useState<number>(0.8);
 
   useEffect(() => {
     loadDashboardData();
@@ -129,13 +135,29 @@ const ControlPanel: React.FC = () => {
       
       // Load service status
       const servicesResponse = await fetch('/api/health/all');
-      const servicesData = await servicesResponse.json();
-      setServices(servicesData.services || []);
+      let servicesData: any = {};
+      try {
+        servicesData = await servicesResponse.json();
+      } catch {}
+      const normalizedServices = Object.entries(servicesData)
+        .filter(([k]) => k !== 'cache_time')
+        .map(([name, v]: any) => ({
+          name,
+          status: v?.status === 'healthy' ? 'healthy' : v?.status === 'unhealthy' ? 'error' : 'unknown',
+          responseTime: Math.round((v?.response_time ?? 0) * 1000) || 0,
+          uptime: 100,
+          lastCheck: v?.last_check || new Date().toISOString()
+        }));
+      setServices(normalizedServices as any);
 
       // Load business metrics
       const metricsResponse = await fetch('/api/metrics/business');
-      const metricsData = await metricsResponse.json();
-      setMetrics(metricsData.metrics || []);
+      if (metricsResponse.status === 200) {
+        const metricsData = await metricsResponse.json();
+        setMetrics(metricsData.metrics || []);
+      } else {
+        setMetrics([]);
+      }
 
       // Load audit logs
       const auditResponse = await fetch('/api/audit/logs?limit=50');
@@ -152,6 +174,40 @@ const ControlPanel: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadCrawlerStatus = async () => {
+    setCrawlerLoading(true);
+    const res = await apiFetch<any>('/api/ingest/crawler/status');
+    if (res.ok) {
+      setCrawlerStatus(res.data || {});
+    } else {
+      setCrawlerStatus({ error: res.error });
+    }
+    setCrawlerLoading(false);
+  };
+
+  useEffect(() => {
+    // Load crawler status on mount and every 15s when the tab is active
+    loadCrawlerStatus();
+    const id = setInterval(loadCrawlerStatus, 15000);
+    return () => clearInterval(id);
+  }, []);
+
+  const startCrawler = async () => {
+    const res = await apiFetch('/api/ingest/crawler/start', { method: 'POST' });
+    if (!res.ok) {
+      alert(`Start fehlgeschlagen: ${res.error}`);
+    }
+    loadCrawlerStatus();
+  };
+
+  const stopCrawler = async () => {
+    const res = await apiFetch('/api/ingest/crawler/stop', { method: 'POST' });
+    if (!res.ok) {
+      alert(`Stop fehlgeschlagen: ${res.error}`);
+    }
+    loadCrawlerStatus();
   };
 
   const getStatusIcon = (status: string) => {
@@ -196,15 +252,41 @@ const ControlPanel: React.FC = () => {
 
   const handleConfigSave = async () => {
     try {
-      await fetch(`/api/config/${selectedConfig.type}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(selectedConfig),
-      });
+      if (selectedConfig?.type === 'sorting-rules' || selectedConfig?.type === 'ingest-config') {
+        // Load current ingest config, update yaml
+        const current = await fetch('/api/ingest/config/ingest');
+        const currentData = current.ok ? await current.json() : { config: {} };
+        const payload = { yaml_text: selectedConfig.value || currentData.yaml } as any;
+        const res = await fetch('/api/ingest/config/ingest', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      }
       setConfigDialog(false);
       loadDashboardData();
     } catch (error) {
       console.error('Error saving configuration:', error);
+    }
+  };
+
+  const openIngestEditor = async () => {
+    try {
+      const r = await fetch('/api/ingest/config/ingest');
+      const d = r.ok ? await r.json() : { yaml: '' };
+      setIngestConfig(d.yaml || '');
+      if (typeof d.confidence_threshold === 'number') setConfidenceThreshold(d.confidence_threshold);
+      setIngestDialog(true);
+    } catch {
+      setIngestConfig('');
+      setIngestDialog(true);
+    }
+  };
+
+  const saveIngestEditor = async () => {
+    try {
+      const res = await fetch('/api/ingest/config/ingest', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml_text: ingestConfig }) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setIngestDialog(false);
+    } catch (e) {
+      alert('Konfiguration speichern fehlgeschlagen');
     }
   };
 
@@ -247,6 +329,11 @@ const ControlPanel: React.FC = () => {
 
       {/* Key Metrics Overview */}
       <Grid container spacing={3} mb={3}>
+        {metrics.length === 0 && (
+          <Grid item xs={12}>
+            <Alert severity="info">No business metrics available yet.</Alert>
+          </Grid>
+        )}
         {metrics.map((metric) => (
           <Grid item xs={12} sm={6} md={3} key={metric.name}>
             <Card>
@@ -284,6 +371,7 @@ const ControlPanel: React.FC = () => {
           <Tab icon={<SecurityIcon />} label="Audit & Logs" />
           <Tab icon={<PeopleIcon />} label="Benutzer" />
           <Tab icon={<AssessmentIcon />} label="Reports" />
+          <Tab icon={<AssessmentIcon />} label="Crawler" />
         </Tabs>
 
         {/* Service Status Tab */}
@@ -323,60 +411,20 @@ const ControlPanel: React.FC = () => {
         {/* Configuration Tab */}
         <TabPanel value={tabValue} index={1}>
           <Box mb={2}>
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => {
-                setSelectedConfig({ type: 'new', name: '', value: '' });
+            <Button sx={{ mr: 1 }} variant="outlined" onClick={openIngestEditor}>Ingest YAML bearbeiten</Button>
+            <Button sx={{ mr: 1 }} variant="outlined" onClick={async () => {
+              try {
+                const r = await fetch('/api/email/config/email');
+                const d = r.ok ? await r.json() : { yaml: '' };
+                setSelectedConfig({ type: 'email-config', yaml: d.yaml || '' });
                 setConfigDialog(true);
-              }}
-            >
-              Neue Konfiguration
-            </Button>
+              } catch {
+                setSelectedConfig({ type: 'email-config', yaml: '' });
+                setConfigDialog(true);
+              }
+            }}>Email Config bearbeiten</Button>
+            <Typography variant="caption" color="textSecondary">Ingest unterstützt mehrere NAS-Shares; Email mehrere Accounts.</Typography>
           </Box>
-          
-          <TableContainer component={Paper}>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Name</TableCell>
-                  <TableCell>Typ</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Letzte Änderung</TableCell>
-                  <TableCell>Aktionen</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {[
-                  { name: 'Sortierregeln', type: 'sorting-rules', status: 'aktiv', lastModified: '2024-01-15' },
-                  { name: 'Email-Konfiguration', type: 'email-config', status: 'aktiv', lastModified: '2024-01-14' },
-                  { name: 'OTRS-Integration', type: 'otrs-config', status: 'aktiv', lastModified: '2024-01-13' },
-                  { name: 'Backup-Strategie', type: 'backup-config', status: 'aktiv', lastModified: '2024-01-12' },
-                ].map((config) => (
-                  <TableRow key={config.name}>
-                    <TableCell>{config.name}</TableCell>
-                    <TableCell>{config.type}</TableCell>
-                    <TableCell>
-                      <Chip label={config.status} color="success" size="small" />
-                    </TableCell>
-                    <TableCell>{config.lastModified}</TableCell>
-                    <TableCell>
-                      <Tooltip title="Bearbeiten">
-                        <IconButton onClick={() => handleConfigEdit(config)}>
-                          <EditIcon />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Anzeigen">
-                        <IconButton>
-                          <VisibilityIcon />
-                        </IconButton>
-                      </Tooltip>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
         </TabPanel>
 
         {/* Audit & Logs Tab */}
@@ -521,32 +569,189 @@ const ControlPanel: React.FC = () => {
             </Grid>
           </Grid>
         </TabPanel>
+
+        {/* Crawler Tab */}
+        <TabPanel value={tabValue} index={5}>
+          <Card>
+            <CardContent>
+              <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                <Typography variant="h6">Ingest Crawler</Typography>
+                <Box>
+                  <Button variant="outlined" onClick={loadCrawlerStatus} startIcon={<RefreshIcon />} sx={{ mr: 1 }}>
+                    Aktualisieren
+                  </Button>
+                  <Button variant="contained" color="success" onClick={startCrawler} sx={{ mr: 1 }} disabled={crawlerStatus?.running}>
+                    Starten
+                  </Button>
+                  <Button variant="outlined" color="warning" onClick={stopCrawler} disabled={!crawlerStatus?.running}>
+                    Stoppen
+                  </Button>
+                </Box>
+              </Box>
+              {crawlerLoading ? (
+                <Box display="flex" justifyContent="center" alignItems="center" minHeight="120px">
+                  <CircularProgress />
+                </Box>
+              ) : crawlerStatus?.error ? (
+                <Alert severity="error">{crawlerStatus.error}</Alert>
+              ) : (
+                <>
+                  {!crawlerStatus || Object.keys(crawlerStatus).length === 0 ? (
+                    <Alert severity="info">Keine Crawler-Daten verfügbar.</Alert>
+                  ) : (
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <Card><CardContent>
+                          <Typography color="textSecondary">Status</Typography>
+                          <Typography variant="h5">{crawlerStatus.running ? 'Läuft' : 'Idle'}</Typography>
+                          <Chip label={crawlerStatus.running ? 'running' : 'stopped'} color={crawlerStatus.running ? 'success' : 'default'} size="small" sx={{ mt: 1 }} />
+                        </CardContent></Card>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <Card><CardContent>
+                          <Typography color="textSecondary">Gestartet</Typography>
+                          <Typography variant="h6">{crawlerStatus.started_at ? new Date(crawlerStatus.started_at).toLocaleString() : '-'}</Typography>
+                        </CardContent></Card>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <Card><CardContent>
+                          <Typography color="textSecondary">Beendet</Typography>
+                          <Typography variant="h6">{crawlerStatus.finished_at ? new Date(crawlerStatus.finished_at).toLocaleString() : '-'}</Typography>
+                        </CardContent></Card>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <Card><CardContent>
+                          <Typography color="textSecondary">Stop angefordert</Typography>
+                          <Typography variant="h6">{crawlerStatus.stop_requested ? 'Ja' : 'Nein'}</Typography>
+                        </CardContent></Card>
+                      </Grid>
+
+                      <Grid item xs={12}>
+                        <Typography variant="h6" sx={{ mt: 2 }}>Statistiken</Typography>
+                        <Grid container spacing={2}>
+                          <Grid item xs={12} sm={6} md={3}>
+                            <Card><CardContent>
+                              <Typography color="textSecondary">Verarbeitet</Typography>
+                              <Typography variant="h5">{crawlerStatus.stats?.processed ?? 0}</Typography>
+                            </CardContent></Card>
+                          </Grid>
+                          <Grid item xs={12} sm={6} md={3}>
+                            <Card><CardContent>
+                              <Typography color="textSecondary">Bewegt</Typography>
+                              <Typography variant="h5">{crawlerStatus.stats?.moved ?? 0}</Typography>
+                            </CardContent></Card>
+                          </Grid>
+                          <Grid item xs={12} sm={6} md={3}>
+                            <Card><CardContent>
+                              <Typography color="textSecondary">Duplikate</Typography>
+                              <Typography variant="h5">{crawlerStatus.stats?.duplicates ?? 0}</Typography>
+                            </CardContent></Card>
+                          </Grid>
+                          <Grid item xs={12} sm={6} md={3}>
+                            <Card><CardContent>
+                              <Typography color="textSecondary">Fehler</Typography>
+                              <Typography variant="h5">{crawlerStatus.stats?.errors ?? 0}</Typography>
+                            </CardContent></Card>
+                          </Grid>
+                        </Grid>
+                      </Grid>
+
+                      <Grid item xs={12}>
+                        <Typography variant="h6" sx={{ mt: 2 }}>Pro Kunde</Typography>
+                        {crawlerStatus.stats?.by_customer && Object.keys(crawlerStatus.stats.by_customer).length > 0 ? (
+                          <TableContainer component={Paper} sx={{ mt: 1 }}>
+                            <Table>
+                              <TableHead>
+                                <TableRow>
+                                  <TableCell>Kunde/Root</TableCell>
+                                  <TableCell align="right">Verarbeitet</TableCell>
+                                  <TableCell align="right">Duplikate</TableCell>
+                                  <TableCell>Unterordner</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {Object.entries<any>(crawlerStatus.stats.by_customer).map(([key, value]) => (
+                                  <TableRow key={key}>
+                                    <TableCell>{key}</TableCell>
+                                    <TableCell align="right">{value.processed ?? 0}</TableCell>
+                                    <TableCell align="right">{value.duplicates ?? 0}</TableCell>
+                                    <TableCell>
+                                      {value.by_subfolder ? (
+                                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                          {Object.entries<any>(value.by_subfolder).map(([sf, sv]: any) => (
+                                            <Chip key={sf} label={`${sf}: ${sv.processed||0}/${sv.duplicates||0}`} size="small" />
+                                          ))}
+                                        </Box>
+                                      ) : '-'}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        ) : (
+                          <Alert severity="info">Noch keine Kundendaten.</Alert>
+                        )}
+                      </Grid>
+                    </Grid>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabPanel>
       </Paper>
 
       {/* Configuration Dialog */}
       <Dialog open={configDialog} onClose={() => setConfigDialog(false)} maxWidth="md" fullWidth>
         <DialogTitle>Konfiguration bearbeiten</DialogTitle>
         <DialogContent>
-          <TextField
-            fullWidth
-            label="Name"
-            value={selectedConfig?.name || ''}
-            onChange={(e) => setSelectedConfig({ ...selectedConfig, name: e.target.value })}
-            margin="normal"
-          />
-          <TextField
-            fullWidth
-            label="Wert"
-            multiline
-            rows={4}
-            value={selectedConfig?.value || ''}
-            onChange={(e) => setSelectedConfig({ ...selectedConfig, value: e.target.value })}
-            margin="normal"
-          />
+          {selectedConfig?.type === 'email-config' ? (
+            <TextField
+              fullWidth
+              label="email-config.yaml"
+              multiline
+              minRows={16}
+              value={selectedConfig?.yaml || ''}
+              onChange={(e) => setSelectedConfig({ ...selectedConfig, yaml: e.target.value })}
+              margin="normal"
+            />
+          ) : (
+            <>
+              <TextField
+                fullWidth
+                label="Name"
+                value={selectedConfig?.name || ''}
+                onChange={(e) => setSelectedConfig({ ...selectedConfig, name: e.target.value })}
+                margin="normal"
+              />
+              <TextField
+                fullWidth
+                label="Wert"
+                multiline
+                rows={4}
+                value={selectedConfig?.value || ''}
+                onChange={(e) => setSelectedConfig({ ...selectedConfig, value: e.target.value })}
+                margin="normal"
+              />
+            </>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfigDialog(false)}>Abbrechen</Button>
-          <Button onClick={handleConfigSave} variant="contained">Speichern</Button>
+          <Button onClick={async () => {
+            if (selectedConfig?.type === 'email-config') {
+              try {
+                const res = await fetch('/api/email/config/email', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml_text: selectedConfig.yaml || '' }) });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                setConfigDialog(false);
+              } catch (e:any) {
+                alert(`Email-Config speichern fehlgeschlagen: ${e.message}`);
+              }
+            } else {
+              await handleConfigSave();
+            }
+          }} variant="contained">Speichern</Button>
         </DialogActions>
       </Dialog>
 
@@ -595,6 +800,35 @@ const ControlPanel: React.FC = () => {
         <DialogActions>
           <Button onClick={() => setUserDialog(false)}>Abbrechen</Button>
           <Button onClick={handleUserSave} variant="contained">Speichern</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Ingest YAML Editor */}
+      <Dialog open={ingestDialog} onClose={() => setIngestDialog(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Ingest Konfiguration (YAML)</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+            <TextField type="number" label="Confidence Threshold" value={confidenceThreshold} onChange={(e) => setConfidenceThreshold(Number(e.target.value))} size="small" />
+            <Button variant="outlined" onClick={async () => {
+              try {
+                const res = await fetch('/api/ingest/config/ingest/confidence-threshold', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confidence_threshold: confidenceThreshold }) });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              } catch (e:any) {
+                alert(`Update failed: ${e.message}`);
+              }
+            }}>Schwelle speichern</Button>
+          </Box>
+          <TextField
+            fullWidth
+            multiline
+            minRows={16}
+            value={ingestConfig}
+            onChange={(e) => setIngestConfig(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIngestDialog(false)}>Abbrechen</Button>
+          <Button onClick={saveIngestEditor} variant="contained">Speichern</Button>
         </DialogActions>
       </Dialog>
     </Box>

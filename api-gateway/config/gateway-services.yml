@@ -51,6 +51,12 @@ services:
     timeout: 15
     rate_limit: "50/minute"
     description: "Top-level domain management service"
+  storage:
+    url: "http://cas_storage_manager:8000"
+    health_check: "/health"
+    timeout: 30
+    rate_limit: "50/minute"
+    description: "Heterogeneous storage manager"
     
   # NEW TEST SERVICE - Demonstrates dynamic configuration
   test_service:
@@ -68,6 +74,7 @@ direct_routes:
   health: "ingest"
   metrics: "ingest"
   test: "test_service"
+  storage: "storage"
 
 # API-specific routes that should be handled directly by the gateway
 # These routes bypass the generic service routing
@@ -76,34 +83,30 @@ api_routes:
     business:
       path: "/api/metrics/business"
       method: "GET"
-      authentication: false
+      authentication: true
       description: "Business metrics aggregation endpoint"
-      mock_data: true
       
   audit:
     logs:
       path: "/api/audit/logs"
       method: "GET"
-      authentication: false
+      authentication: true
       description: "Audit logs endpoint"
-      mock_data: true
       
   users:
     list:
       path: "/users/"
       method: "GET"
-      authentication: false
+      authentication: true
       description: "User management endpoint"
-      mock_data: true
       
   # NEW API ROUTE - Demonstrates dynamic route addition
   test:
     status:
       path: "/api/test/status"
       method: "GET"
-      authentication: false
+      authentication: true
       description: "Test API endpoint for configuration validation"
-      mock_data: true
 
 # Gateway configuration
 gateway:

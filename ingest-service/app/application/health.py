@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 import asyncio
 import aiohttp
 import logging
+import time
 from typing import Dict, Any
 from datetime import datetime
 import psycopg2
@@ -26,15 +27,17 @@ class HealthChecker:
     async def check_elasticsearch(self) -> Dict[str, Any]:
         """Check Elasticsearch connectivity and cluster health"""
         try:
+            start_time = time.perf_counter()
             es = Elasticsearch([self.elasticsearch_url], timeout=5)
             cluster_health = es.cluster.health()
             info = es.info()
+            duration_ms = int((time.perf_counter() - start_time) * 1000)
             
             return {
                 "status": "healthy",
                 "cluster_health": cluster_health,
                 "version": info.get('version', {}).get('number'),
-                "response_time_ms": 0  # TODO: Add timing
+                "response_time_ms": duration_ms
             }
         except Exception as e:
             logger.warning(f"Elasticsearch health check failed: {e}")

@@ -17,6 +17,7 @@ import json
 from dataclasses import dataclass, asdict
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from prometheus_client import Counter
 
 from .entities import (
     FileEntity, SortingRule, ProcessingBatch, ProcessingStatistics,
@@ -326,6 +327,9 @@ class DocumentProcessingService:
         self.message_queue_repo = message_queue_repo
         self.config = self._load_config(config_path)
         self.snapshots: Dict[str, ProcessingSnapshot] = {}
+        self.auto_counter = Counter('ingest_classification_auto_total', 'Auto-classified files', ['category'])
+        self.manual_counter = Counter('ingest_classification_manual_total', 'Manually confirmed classifications', ['category'])
+        self.conf_bucket = Counter('ingest_classification_confidence_total', 'Confidence bucket counts', ['bucket'])
         
     def _load_config(self, config_path: str) -> Dict:
         """Load sorting rules configuration"""
@@ -548,6 +552,13 @@ class DocumentProcessingService:
             
             # Classify with LLM
             classification = self.classify_with_llm(file_path)
+            # Confidence bucketing
+            c = classification.confidence or 0.0
+            bucket = 'lt50' if c < 0.5 else '50-80' if c < 0.8 else 'gte80'
+            try:
+                self.conf_bucket.labels(bucket=bucket).inc()
+            except Exception:
+                pass
             
             # Determine target path based on classification
             target_path = self._determine_target_path(file_path, classification)
@@ -556,9 +567,46 @@ class DocumentProcessingService:
             if self.config.get('processing', {}).get('backup', {}).get('enabled', True):
                 backup_path = self._create_backup(file_path)
             
-            # Move file to target location
-            os.makedirs(os.path.dirname(target_path), exist_ok=True)
-            shutil.move(file_path, target_path)
+            # Confidence decision threshold
+            threshold = float(self.config.get('classification', {}).get('confidence_threshold', 0.8))
+            if classification.confidence >= threshold:
+                # Auto move
+                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                shutil.move(file_path, target_path)
+                try:
+                    self.auto_counter.labels(category=classification.category or 'unsorted').inc()
+                except Exception:
+                    pass
+            else:
+                # Store review item for manual confirmation
+                try:
+                    import shelve
+                    import time
+                    rid = str(uuid4())
+                    st = os.stat(file_path)
+                    review = {
+                        'id': rid,
+                        'original_path': file_path,
+                        'filename': os.path.basename(file_path),
+                        'size': st.st_size,
+                        'mtime': st.st_mtime,
+                        'suggested_category': classification.category,
+                        'confidence': classification.confidence,
+                        'customer': classification.customer,
+                        'project': classification.project,
+                        'tags': classification.tags or [],
+                        'metadata': {}
+                    }
+                    db = shelve.open('data/review_store')
+                    try:
+                        db[rid] = review
+                        db.sync()
+                    finally:
+                        db.close()
+                except Exception as e:
+                    logger.error(f"Failed to enqueue review: {e}")
+                # Do not move file yet
+                return ProcessingResult(success=True, message="Queued for manual review", metadata={'review_id': rid, 'confidence': classification.confidence})
             
             # Store document metadata
             document = Document(
@@ -602,28 +650,81 @@ class DocumentProcessingService:
             return ProcessingResult(success=False, error=str(e))
     
     def _determine_target_path(self, file_path: str, classification: LLMClassificationResult) -> str:
-        """Determine target path based on classification and rules"""
-        categories = self.config.get('categories', {})
-        category_config = categories.get(classification.category, {})
-        
-        # Get base path from category
-        base_path = category_config.get('path', '/unsorted')
-        
-        # Add customer and project if available
-        if classification.customer:
-            base_path = base_path.replace('{customer}', classification.customer)
-        if classification.project:
-            base_path = base_path.replace('{project}', classification.project)
-        
-        # Add year
-        current_year = datetime.now().year
-        base_path = base_path.replace('{year}', str(current_year))
-        
-        # Add filename
-        filename = os.path.basename(file_path)
-        target_path = os.path.join(base_path, filename)
-        
-        return target_path
+        """Determine target path using extended heuristics (Phase 1+).
+        Rules:
+        - Customer root: detect 4-6 digit prefix with name (e.g., 12345_Musterkunde), else internal roots, else 'ALLGEMEIN'.
+        - Subfolder: Projekte/Portale/Kampagnen/Angebote/Archiv/Allgemein based on filename/path or classification.category.
+        - Year: optional year subfolder under configured sections.
+        - Secondary sort: if tags/date in filename, route to month subfolder within year.
+        - Smart defaults per source: map by source path prefixes if configured.
+        - Keep filename; resolve collisions by suffixing (handled upstream).
+        """
+        try:
+            central_base = self.config.get('central_base', '/data/sorted')
+            roots_internal = set(self.config.get('internal_roots', ['ORGA','INFRA','SALES','HR']))
+            path_lower = file_path.lower()
+            filename = os.path.basename(file_path)
+
+            # Extract customer id/name from path if present (e.g., 12345_Musterkunde)
+            import re
+            m = re.search(r"(\d{4,6})_([\w\- ]+)", os.path.dirname(file_path))
+            if m:
+                customer_root = m.group(0)
+            else:
+                # Fallback internal roots detection
+                customer_root = next((r for r in roots_internal if r.lower() in path_lower), 'ALLGEMEIN')
+
+            # Smart defaults by source
+            smart_defaults = self.config.get('sorting', {}).get('smart_defaults', {})
+            for prefix, dest in smart_defaults.items():
+                if path_lower.startswith(prefix.lower()):
+                    customer_root = dest.get('customer_root', customer_root)
+                    preset_sub = dest.get('subfolder')
+                    if preset_sub:
+                        subfolder = preset_sub
+                        break
+
+            # Subfolders (primary + classification hint)
+            subfolder = locals().get('subfolder', 'Allgemein')
+            candidates = {
+                'Projekte': ['projekt', 'projects', 'proj_'],
+                'Portale': ['portal', 'website', 'site'],
+                'Kampagnen': ['kampagne', 'campaign'],
+                'Angebote': ['angebot', 'offer', 'quote'],
+                'Archiv': ['archiv', 'archive']
+            }
+            for key, keys in candidates.items():
+                if any(k in path_lower or k in filename.lower() for k in keys):
+                    subfolder = key
+                    break
+            # Classification override
+            mapping = {
+                'finanzen': 'Archiv',
+                'projekte': 'Projekte',
+                'personal': 'Archiv',
+                'footage': 'Projekte',
+            }
+            if classification and classification.category:
+                subfolder = mapping.get(classification.category.lower(), subfolder)
+
+            # Year folders where applicable
+            year = datetime.now().year
+            year_paths = set(self.config.get('sorting', {}).get('year_folders_under', ['Projekte','Archiv']))
+            if self.config.get('sorting', {}).get('enable_year_subfolders', True) and subfolder in year_paths:
+                # Secondary sort by month from filename date like YYYY-MM-DD or YYYYMMDD
+                month_dir = None
+                import re
+                m = re.search(r"(20\d{2})[-_]?([01]\d)[-_]?([0-3]\d)?", filename)
+                if m:
+                    month_dir = f"{int(m.group(2)):02d}"
+                target_dir = os.path.join(central_base, customer_root, subfolder, str(year), month_dir) if month_dir else os.path.join(central_base, customer_root, subfolder, str(year))
+            else:
+                target_dir = os.path.join(central_base, customer_root, subfolder)
+
+            return os.path.join(target_dir, filename)
+        except Exception:
+            # Fallback: unsorted
+            return os.path.join(self.config.get('central_base', '/data/sorted'), 'ALLGEMEIN', 'Allgemein', os.path.basename(file_path))
     
     def _create_backup(self, file_path: str) -> str:
         """Create backup of file before processing"""

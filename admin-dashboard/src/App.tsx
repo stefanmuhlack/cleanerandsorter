@@ -16,6 +16,8 @@ import Settings from './pages/Settings';
 import EmailIntegration from './pages/EmailIntegration';
 import FootageManagement from './pages/FootageManagement';
 import Monitoring from './pages/Monitoring';
+import Duplicates from './pages/Duplicates';
+import Review from './pages/Review';
 
 const theme = createTheme({
   palette: {
@@ -66,6 +68,8 @@ function App() {
               <Route path="/email-integration" element={<EmailIntegration />} />
               <Route path="/footage-management" element={<FootageManagement />} />
               <Route path="/monitoring" element={<Monitoring />} />
+              <Route path="/duplicates" element={<Duplicates />} />
+              <Route path="/review" element={<Review />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </Layout>

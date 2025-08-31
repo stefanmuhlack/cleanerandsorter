@@ -93,3 +93,21 @@ scrape_configs:
       - targets: ['admin-dashboard:3001']
     metrics_path: '/metrics'
     scrape_interval: 30s 
+
+  - job_name: 'storage-manager'
+    static_configs:
+      - targets: ['storage-manager:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'footage-service'
+    static_configs:
+      - targets: ['footage-service:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['api-gateway:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s

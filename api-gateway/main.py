@@ -30,12 +30,13 @@ logger = logging.getLogger(__name__)
 # Prometheus metrics
 REQUEST_COUNT = Counter('gateway_requests_total', 'Total requests through gateway', ['service', 'method', 'status'])
 REQUEST_LATENCY = Histogram('gateway_request_duration_seconds', 'Request latency through gateway', ['service'])
+REQUEST_RBAC_DENIED = Counter('gateway_rbac_denials_total', 'RBAC denied requests', ['service', 'method', 'role'])
 
 # Rate limiting
 limiter = Limiter(key_func=get_remote_address)
 
-# Security
-security = HTTPBearer()
+# Security (optional auth for RBAC/public routes)
+security = HTTPBearer(auto_error=False)
 
 # Redis for caching and rate limiting
 redis_client: Optional[redis.Redis] = None
@@ -94,6 +95,27 @@ async def shutdown_event():
         await redis_client.close()
     logger.info("API Gateway shutting down...")
 
+# Runtime config reload
+def reload_runtime_config() -> Dict[str, Any]:
+    global SERVICES, DIRECT_ROUTES, GATEWAY_CONFIG, MONITORING_CONFIG, JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRATION, health_cache_ttl
+    config_loader.reload_config()
+    SERVICES = config_loader.get_services()
+    DIRECT_ROUTES = config_loader.get_direct_routes()
+    GATEWAY_CONFIG = config_loader.get_gateway_config()
+    MONITORING_CONFIG = config_loader.get_monitoring_config()
+    JWT_SECRET = GATEWAY_CONFIG.get('jwt_secret', JWT_SECRET)
+    JWT_ALGORITHM = GATEWAY_CONFIG.get('jwt_algorithm', JWT_ALGORITHM)
+    JWT_EXPIRATION = GATEWAY_CONFIG.get('jwt_expiration', JWT_EXPIRATION)
+    health_cache_ttl = GATEWAY_CONFIG.get('health_cache_ttl', health_cache_ttl)
+    # Reload RBAC
+    rbac.load()
+    return {
+        "services": list(SERVICES.keys()),
+        "direct_routes": DIRECT_ROUTES,
+        "jwt_algorithm": JWT_ALGORITHM,
+        "health_cache_ttl": health_cache_ttl
+    }
+
 # Health check functions
 async def check_service_health(service_name: str, service_config: Dict[str, Any]) -> Dict[str, Any]:
     """Check health of a specific service."""
@@ -113,9 +135,20 @@ async def check_service_health(service_name: str, service_config: Dict[str, Any]
                     "last_check": datetime.utcnow().isoformat()
                 }
             else:
+                # Try to parse degraded/warning state from response body
+                status_text = "unhealthy"
+                error_text: Optional[str] = None
+                try:
+                    data = response.json()
+                    if isinstance(data, dict):
+                        if data.get("status") == "degraded":
+                            status_text = "warning"
+                        error_text = data.get("error") or data.get("detail")
+                except Exception:
+                    pass
                 return {
-                    "status": "unhealthy",
-                    "error": f"HTTP {response.status_code}",
+                    "status": status_text,
+                    "error": error_text or f"HTTP {response.status_code}",
                     "response_time": round(duration, 3),
                     "status_code": response.status_code,
                     "last_check": datetime.utcnow().isoformat()
@@ -143,9 +176,11 @@ async def check_service_health(service_name: str, service_config: Dict[str, Any]
             "last_check": datetime.utcnow().isoformat()
         }
 
-# Authentication middleware
+# Authentication dependencies
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
-    """Validate JWT token and return user information."""
+    """Require JWT; used for admin endpoints and strict auth routes."""
+    if not credentials or not credentials.credentials:
+        raise HTTPException(status_code=401, detail="Not authenticated")
     try:
         payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return payload
@@ -153,6 +188,18 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+async def get_optional_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> Dict[str, Any]:
+    """Return user if token provided; otherwise anonymous marker for RBAC/public routes."""
+    if credentials and credentials.credentials:
+        try:
+            payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            payload['_auth'] = True
+            return payload
+        except Exception:
+            # Invalid token still treated as unauthenticated
+            return {'user_id': 'anonymous', 'role': 'anonymous', '_auth': False}
+    return {'user_id': 'anonymous', 'role': 'anonymous', '_auth': False}
 
 # Gateway middleware
 @app.middleware("http")
@@ -195,6 +242,32 @@ async def gateway_health():
         "timestamp": datetime.utcnow().isoformat(),
         "version": "1.0.0"
     }
+
+@app.post("/admin/reload-config")
+async def admin_reload_config(user: Dict[str, Any] = Depends(get_current_user)):
+    """Admin-only: reload gateway YAML configs and RBAC; clear health cache."""
+    if user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Forbidden")
+    summary = reload_runtime_config()
+    try:
+        rc = await get_redis()
+        await rc.delete("gateway:health_cache")
+    except Exception:
+        pass
+    return {"reloaded": True, **summary}
+
+@app.post("/api/admin/reload-config")
+async def admin_reload_config_api(user: Dict[str, Any] = Depends(get_current_user)):
+    """Admin-only: reload via /api namespace to avoid catch-all conflicts."""
+    if user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Forbidden")
+    summary = reload_runtime_config()
+    try:
+        rc = await get_redis()
+        await rc.delete("gateway:health_cache")
+    except Exception:
+        pass
+    return {"reloaded": True, **summary}
 
 @app.get("/health/all")
 async def all_services_health():
@@ -246,91 +319,26 @@ async def metrics():
 # Specific API routes (MUST come before any generic routing)
 # These routes are configured in config/gateway-services.yml
 
-# Fallback specific routes (for backward compatibility)
 @app.get("/api/metrics/business")
-async def get_business_metrics():
-    """Get business metrics - MOCK IMPLEMENTATION."""
-    return {
-        "total_revenue": 1250000,
-        "monthly_growth": 12.5,
-        "active_users": 1250,
-        "conversion_rate": 3.2,
-        "average_order_value": 450,
-        "customer_satisfaction": 4.8,
-        "top_products": [
-            {"name": "Premium Package", "sales": 45000},
-            {"name": "Standard Package", "sales": 32000},
-            {"name": "Basic Package", "sales": 28000}
-        ],
-        "revenue_by_month": [
-            {"month": "Jan", "revenue": 95000},
-            {"month": "Feb", "revenue": 105000},
-            {"month": "Mar", "revenue": 115000},
-            {"month": "Apr", "revenue": 125000}
-        ]
-    }
+async def get_business_metrics(user: Dict[str, Any] = Depends(get_current_user)):
+    """Business metrics placeholder with no mock data. Returns 204 when unavailable."""
+    if user.get('role') not in ['admin', 'user']:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return Response(status_code=204)
 
 @app.get("/api/audit/logs")
-async def get_audit_logs(limit: int = 50):
-    """Get audit logs - MOCK IMPLEMENTATION."""
-    return {
-        "logs": [
-            {
-                "id": "1",
-                "timestamp": "2024-01-15T10:30:00Z",
-                "user": "admin",
-                "action": "file_upload",
-                "details": "Uploaded invoice_2024_001.pdf",
-                "ip_address": "192.168.1.100",
-                "status": "success"
-            },
-            {
-                "id": "2",
-                "timestamp": "2024-01-15T10:25:00Z",
-                "user": "user123",
-                "action": "login",
-                "details": "User logged in successfully",
-                "ip_address": "192.168.1.101",
-                "status": "success"
-            },
-            {
-                "id": "3",
-                "timestamp": "2024-01-15T10:20:00Z",
-                "user": "admin",
-                "action": "system_config",
-                "details": "Updated processing configuration",
-                "ip_address": "192.168.1.100",
-                "status": "success"
-            }
-        ],
-        "total": 3,
-        "limit": limit
-    }
+async def get_audit_logs(limit: int = 50, user: Dict[str, Any] = Depends(get_current_user)):
+    """Audit logs placeholder with no mock data. Returns empty result until audit store is implemented."""
+    if user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return {"logs": [], "total": 0, "limit": limit}
 
 @app.get("/users/")
-async def get_users():
-    """Get users - MOCK IMPLEMENTATION."""
-    return {
-        "users": [
-            {
-                "id": "1",
-                "username": "admin",
-                "email": "admin@company.com",
-                "role": "admin",
-                "status": "active",
-                "created_at": "2024-01-01T00:00:00Z"
-            },
-            {
-                "id": "2",
-                "username": "user123",
-                "email": "user123@company.com",
-                "role": "user",
-                "status": "active",
-                "created_at": "2024-01-02T00:00:00Z"
-            }
-        ],
-        "total": 2
-    }
+async def get_users(user: Dict[str, Any] = Depends(get_current_user)):
+    """Users placeholder with no mock data. Returns empty result until user service is integrated."""
+    if user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return {"users": [], "total": 0}
 
 
 
@@ -424,25 +432,8 @@ async def forward_request(service: str, path: str, request: Request, user: Dict[
 # Specific API routes with /api prefix (MUST come before generic catch-all route)
 @app.get("/test/status")
 async def get_test_status():
-    """Get test service status - MOCK IMPLEMENTATION."""
-    return {
-        "service": "test_service",
-        "status": "operational",
-        "version": "1.0.0",
-        "timestamp": "2024-01-15T10:30:00Z",
-        "features": [
-            "dynamic_configuration",
-            "yaml_loading",
-            "service_discovery",
-            "health_monitoring"
-        ],
-        "configuration": {
-            "loaded_from": "YAML",
-            "last_updated": "2024-01-15T10:30:00Z",
-            "services_count": len(SERVICES),
-            "api_routes_count": len(config_loader.get_api_routes())
-        }
-    }
+    """Placeholder: return no content."""
+    return Response(status_code=204)
 
 @app.api_route("/api/{service}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 @limiter.limit("100/minute")
@@ -450,13 +441,22 @@ async def proxy_api_route(
     request: Request,
     service: str,
     path: str,
-    user: Dict[str, Any] = Depends(get_current_user),
+    user: Dict[str, Any] = Depends(get_optional_user),
 ) -> Response:
     """Proxy requests with /api prefix to appropriate services."""
     # RBAC check
     role = user.get('role', 'user')
-    full_path = f"{service}/{path}" if path else service
-    if not rbac.is_allowed(role, service, request.method, full_path):
+    path_for_rbac = path or ""
+    logger.info(f"RBAC check /api: role={role} service={service} path={path_for_rbac}")
+    # Temporary allowance: authenticated users can GET ingest processing resources
+    if user.get('_auth', False) and service == 'ingest' and request.method.upper() == 'GET' and path_for_rbac.startswith('processing/'):
+        return await forward_request(service, path, request, user)
+    if role == 'admin':
+        return await forward_request(service, path, request, user)
+    if not rbac.is_allowed(role, service, request.method, path_for_rbac):
+        REQUEST_RBAC_DENIED.labels(service=service, method=request.method, role=role).inc()
+        if not user.get('_auth', False):
+            raise HTTPException(status_code=401, detail="Not authenticated")
         raise HTTPException(status_code=403, detail="Forbidden by RBAC policy")
     # For /api/upload e.g., service becomes "upload" and forward_request logic is used
     return await forward_request(service, path, request, user)
@@ -468,7 +468,7 @@ async def proxy_request(
     request: Request,
     service: str,
     path: str,
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_optional_user)
 ):
     """Proxy requests to appropriate services."""
     # Check if this is a direct route mapping
@@ -482,8 +482,17 @@ async def proxy_request(
 
     # RBAC check for generic routes
     role = user.get('role', 'user')
-    full_path = f"{service}/{path}" if path else service
-    if not rbac.is_allowed(role, service, request.method, full_path):
+    path_for_rbac = path or ""
+    logger.info(f"RBAC check generic: role={role} service={service} path={path_for_rbac}")
+    # Temporary allowance: authenticated users can GET ingest processing resources
+    if user.get('_auth', False) and service == 'ingest' and request.method.upper() == 'GET' and path_for_rbac.startswith('processing/'):
+        pass
+    if role == 'admin':
+        pass
+    if not rbac.is_allowed(role, service, request.method, path_for_rbac):
+        REQUEST_RBAC_DENIED.labels(service=service, method=request.method, role=role).inc()
+        if not user.get('_auth', False):
+            raise HTTPException(status_code=401, detail="Not authenticated")
         raise HTTPException(status_code=403, detail="Forbidden by RBAC policy")
     
     # Check rate limiting per service

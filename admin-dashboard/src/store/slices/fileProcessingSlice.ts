@@ -1,11 +1,12 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 
 interface ProcessingJob {
-  id: string;
-  filename: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed' | 'rolled_back';
-  progress: number;
-  startTime: string;
+  id?: string;
+  filename?: string;
+  status?: 'pending' | 'processing' | 'completed' | 'failed' | 'rolled_back' | string;
+  progress?: number;
+  startTime?: string;
+  created_at?: string;
   endTime?: string;
   error?: string;
   targetPath?: string;
@@ -38,38 +39,18 @@ interface FileProcessingState {
   error: string | null;
   processing: boolean;
   selectedFiles: File[];
+  uploadedPaths: string[];
 }
 
 const initialState: FileProcessingState = {
-  jobs: [
-    {
-      id: '1',
-      filename: 'invoice_2024_001.pdf',
-      status: 'completed',
-      progress: 100,
-      startTime: '2024-01-15T10:30:00Z',
-      endTime: '2024-01-15T10:32:15Z',
-      targetPath: '/finanzen/rechnungen/2024/',
-      classification: 'finanzen/rechnungen',
-      isDuplicate: false
-    },
-    {
-      id: '2',
-      filename: 'contract_customer_a.pdf',
-      status: 'processing',
-      progress: 65,
-      startTime: '2024-01-15T10:35:00Z',
-      targetPath: '/projekte/vertraege/',
-      classification: 'projekte/vertraege'
-    }
-  ],
+  jobs: [],
   stats: {
-    totalFiles: 245,
-    processedFiles: 238,
-    failedFiles: 3,
-    duplicatesFound: 4,
-    averageProcessingTime: 2.3,
-    lastProcessed: '2024-01-15T10:35:00Z'
+    totalFiles: 0,
+    processedFiles: 0,
+    failedFiles: 0,
+    duplicatesFound: 0,
+    averageProcessingTime: 0,
+    lastProcessed: ''
   },
   config: {
     enableDuplicateDetection: true,
@@ -81,7 +62,8 @@ const initialState: FileProcessingState = {
   loading: false,
   error: null,
   processing: false,
-  selectedFiles: []
+  selectedFiles: [],
+  uploadedPaths: []
 };
 
 // Async thunks
@@ -92,9 +74,11 @@ export const uploadFiles = createAsyncThunk(
     const formData = new FormData();
     files.forEach(file => formData.append('files', file));
     
-    const response = await fetch('/upload', {
+    const token = localStorage.getItem('token');
+    const response = await fetch('/api/ingest/upload', {
       method: 'POST',
-      body: formData
+      body: formData,
+      headers: token ? { 'Authorization': `Bearer ${token}` } : undefined
     });
     
     if (!response.ok) {
@@ -107,13 +91,15 @@ export const uploadFiles = createAsyncThunk(
 
 export const processFiles = createAsyncThunk(
   'fileProcessing/processFiles',
-  async (config: Partial<ProcessingConfig>) => {
-    const response = await fetch('/processing/start', {
+  async (payload: { files: string[]; config?: Partial<ProcessingConfig> }) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch('/api/ingest/processing/start', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
       },
-      body: JSON.stringify(config)
+      body: JSON.stringify({ files: payload.files, ...(payload.config ? { config: payload.config } : {}) })
     });
     
     if (!response.ok) {
@@ -127,8 +113,10 @@ export const processFiles = createAsyncThunk(
 export const stopProcessing = createAsyncThunk(
   'fileProcessing/stopProcessing',
   async () => {
-    const response = await fetch('/processing/stop', {
-      method: 'POST'
+    const token = localStorage.getItem('token');
+    const response = await fetch('/api/ingest/processing/stop', {
+      method: 'POST',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : undefined
     });
     
     if (!response.ok) {
@@ -142,8 +130,10 @@ export const stopProcessing = createAsyncThunk(
 export const rollbackJob = createAsyncThunk(
   'fileProcessing/rollbackJob',
   async (jobId: string) => {
-    const response = await fetch(`/processing/rollback/${jobId}`, {
-      method: 'POST'
+    const token = localStorage.getItem('token');
+    const response = await fetch(`/api/ingest/processing/rollback/${jobId}`, {
+      method: 'POST',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : undefined
     });
     
     if (!response.ok) {
@@ -157,7 +147,10 @@ export const rollbackJob = createAsyncThunk(
 export const fetchProcessingJobs = createAsyncThunk(
   'fileProcessing/fetchJobs',
   async () => {
-    const response = await fetch('/api/ingest/processing/jobs');
+    const token = localStorage.getItem('token');
+    const response = await fetch('/api/ingest/processing/jobs', {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : undefined
+    });
     
     if (!response.ok) {
       throw new Error('Failed to fetch jobs');
@@ -170,7 +163,10 @@ export const fetchProcessingJobs = createAsyncThunk(
 export const fetchProcessingStats = createAsyncThunk(
   'fileProcessing/fetchStats',
   async () => {
-    const response = await fetch('/api/ingest/processing/stats');
+    const token = localStorage.getItem('token');
+    const response = await fetch('/api/ingest/processing/stats', {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : undefined
+    });
     
     if (!response.ok) {
       throw new Error('Failed to fetch stats');
@@ -195,6 +191,9 @@ const fileProcessingSlice = createSlice({
     },
     setSelectedFiles: (state, action: PayloadAction<File[]>) => {
       state.selectedFiles = action.payload;
+    },
+    setUploadedPaths: (state, action: PayloadAction<string[]>) => {
+      state.uploadedPaths = action.payload || [];
     },
     updateJobProgress: (state, action: PayloadAction<{ id: string; progress: number }>) => {
       const job = state.jobs.find(j => j.id === action.payload.id);
@@ -233,9 +232,8 @@ const fileProcessingSlice = createSlice({
       })
       .addCase(uploadFiles.fulfilled, (state, action) => {
         state.loading = false;
-        if (action.payload.jobs) {
-          state.jobs.push(...action.payload.jobs);
-        }
+        // Store uploaded file paths for subsequent processing
+        state.uploadedPaths = action.payload?.files || [];
       })
       .addCase(uploadFiles.rejected, (state, action) => {
         state.loading = false;
@@ -249,8 +247,12 @@ const fileProcessingSlice = createSlice({
       })
       .addCase(processFiles.fulfilled, (state, action) => {
         state.processing = false;
-        if (action.payload.jobs) {
-          state.jobs = action.payload.jobs;
+        if (action.payload?.batch?.files) {
+          state.jobs = action.payload.batch.files;
+        } else if (action.payload?.file) {
+          state.jobs = [action.payload.file];
+        } else if (Array.isArray(action.payload?.files)) {
+          state.jobs = action.payload.files;
         }
       })
       .addCase(processFiles.rejected, (state, action) => {
@@ -306,7 +308,15 @@ const fileProcessingSlice = createSlice({
       })
       .addCase(fetchProcessingStats.fulfilled, (state, action) => {
         state.loading = false;
-        state.stats = action.payload;
+        const backend = action.payload || {};
+        state.stats = {
+          totalFiles: backend.total_files_processed ?? 0,
+          processedFiles: backend.successful_files ?? 0,
+          failedFiles: backend.failed_files ?? 0,
+          duplicatesFound: backend.files_by_status?.duplicate ?? 0,
+          averageProcessingTime: 0,
+          lastProcessed: ''
+        };
       })
       .addCase(fetchProcessingStats.rejected, (state, action) => {
         state.loading = false;

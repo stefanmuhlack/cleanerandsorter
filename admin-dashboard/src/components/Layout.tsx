@@ -63,6 +63,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { text: 'Control Panel', icon: <ControlPanelIcon />, path: '/control-panel' },
     { text: 'Dateiverarbeitung', icon: <UploadIcon />, path: '/file-processing' },
     { text: 'Sortierregeln', icon: <RuleIcon />, path: '/sorting-rules' },
+    { text: 'Dublettenkorb', icon: <RuleIcon />, path: '/duplicates' },
+    { text: 'Offene Zuordnungen', icon: <RuleIcon />, path: '/review' },
     { text: 'Statistiken', icon: <AnalyticsIcon />, path: '/statistics' },
     { text: 'E-Mail Integration', icon: <EmailIcon />, path: '/email-integration' },
     { text: 'Footage Management', icon: <VideoIcon />, path: '/footage-management' },
@@ -232,26 +234,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       <Divider />
 
-      {/* Quick Stats */}
-      <Box sx={{ p: 2 }}>
-        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-          Schnellübersicht
-        </Typography>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography variant="caption">Dateien heute:</Typography>
-            <Typography variant="caption" fontWeight="bold">1,247</Typography>
-          </Box>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography variant="caption">Verarbeitet:</Typography>
-            <Typography variant="caption" fontWeight="bold" color="success.main">1,180</Typography>
-          </Box>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography variant="caption">Wartend:</Typography>
-            <Typography variant="caption" fontWeight="bold" color="warning.main">45</Typography>
-          </Box>
-        </Box>
-      </Box>
+      {/* Quick Stats removed (no mock). Add real widget later */}
     </Box>
   );
 
